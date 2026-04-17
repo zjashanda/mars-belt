@@ -1,0 +1,152 @@
+[
+  {
+    "idx": 1,
+    "word": "Hello My dear",
+    "extWord": "Hello My dear",
+    "type": "唤醒词",
+    "reply": "Yes/Hello/What can I do for you",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 01 00 21 FB",
+    "recProtocol": "A5 FA 00 82 01 00 22 FB"
+  },
+  {
+    "idx": 2,
+    "word": "Power on",
+    "extWord": "Power on",
+    "type": "命令词",
+    "reply": "System ready",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 02 00 22 FB",
+    "recProtocol": "A5 FA 00 82 02 00 23 FB"
+  },
+  {
+    "idx": 3,
+    "word": "Power off",
+    "extWord": "Power off",
+    "type": "命令词",
+    "reply": "Goodbye",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 03 00 22 FB",
+    "recProtocol": "A5 FA 00 82 03 00 23 FB"
+  },
+  {
+    "idx": 4,
+    "word": "Volume up",
+    "extWord": "Volume up",
+    "type": "增大音量",
+    "reply": "Volume increased",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 06 00 26 FB",
+    "recProtocol": "A5 FA 00 82 06 00 27 FB"
+  },
+  {
+    "idx": 5,
+    "word": "Set volume to max",
+    "extWord": "Set volume to max",
+    "type": "最大音量",
+    "reply": "Okay, maximum volume",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 08 00 33 FB",
+    "recProtocol": "A5 FA 00 82 08 00 34 FB"
+  },
+  {
+    "idx": 6,
+    "word": "Volume down",
+    "extWord": "Volume down",
+    "type": "减小音量",
+    "reply": "Volume decreased",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 06 00 26 FB",
+    "recProtocol": "A5 FA 00 82 06 00 27 FB"
+  },
+  {
+    "idx": 7,
+    "word": "Set volume to min",
+    "extWord": "Set volume to min",
+    "type": "最小音量",
+    "reply": "Okay, minimum volume",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 08 00 33 FB",
+    "recProtocol": "A5 FA 00 82 08 00 34 FB"
+  },
+  {
+    "idx": 8,
+    "word": "Set volume to medium",
+    "extWord": "Set volume to medium",
+    "type": "中等音量",
+    "reply": "Okay, medium volume",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 06 00 26 FB",
+    "recProtocol": "A5 FA 00 82 06 00 27 FB"
+  },
+  {
+    "idx": 9,
+    "word": "Exit recognition",
+    "extWord": "Exit recognition",
+    "type": "退出识别",
+    "reply": "I'm going to rest now. Just call if you need me",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 08 00 33 FB",
+    "recProtocol": "A5 FA 00 82 08 00 34 FB"
+  },
+  {
+    "idx": 10,
+    "word": null,
+    "extWord": null,
+    "type": "欢迎语",
+    "reply": "Hey there! Your smart product is all set. Give it a try and wake me up!",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 07 00 27 FB",
+    "recProtocol": "A5 FA 00 82 07 00 28 FB"
+  },
+  {
+    "idx": 11,
+    "word": null,
+    "extWord": null,
+    "type": "播报语",
+    "reply": "Hello! How can I help?",
+    "replyMode": "被",
+    "sndProtocol": "A5 FA 00 81 08 00 28 FB",
+    "recProtocol": "A5 FA 00 82 08 00 29 FB"
+  },
+  {
+    "idx": 12,
+    "word": null,
+    "extWord": null,
+    "type": "休息语",
+    "reply": "I'm going to rest now. Just call if you need me",
+    "replyMode": "主",
+    "sndProtocol": "A5 FA 00 81 08 00 28 FB",
+    "recProtocol": "A5 FA 00 82 08 00 29 FB"
+  },
+  {
+    "idx": 13,
+    "word": null,
+    "extWord": null,
+    "type": "心跳协议",
+    "reply": null,
+    "replyMode": null,
+    "sndProtocol": "A5 FA 00 81 08 00 29 FB",
+    "recProtocol": "A5 FA 00 82 08 00 30 FB"
+  },
+  {
+    "idx": 14,
+    "word": "Turn on narration",
+    "extWord": "Turn on narration",
+    "type": "开播报",
+    "reply": "Announcements on",
+    "replyMode": "主",
+    "sndProtocol": null,
+    "recProtocol": null
+  },
+  {
+    "idx": 15,
+    "word": "Turn off narration",
+    "extWord": "Turn off narration",
+    "type": "关播报",
+    "reply": "Announcements off",
+    "replyMode": "主",
+    "sndProtocol": null,
+    "recProtocol": null
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "skillsRoot": "audio/repos",
+  "repos": {
+    "listenai-play": {
+      "repoUrl": "git@github-zjashanda:zjashanda/listenai-play.git",
+      "checkoutDir": "listenai-play",
+      "entryScript": "scripts/listenai_play.py"
+    },
+    "listenai-laid-installer": {
+      "repoUrl": "git@github-zjashanda:zjashanda/listenai-laid-installer.git",
+      "checkoutDir": "listenai-laid-installer",
+      "entryScripts": {
+        "linux": "scripts/install_laid_linux.sh",
+        "windows": "scripts/install_laid_windows.ps1"
+      }
+    }
+  }
+}

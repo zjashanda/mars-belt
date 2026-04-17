@@ -1,0 +1,4 @@
+interface:
+  display_name: "ListenAI Laid Installer"
+  short_description: "Install laid for PowerShell and bash/zsh"
+  default_prompt: "Install or refresh the laid command on this machine."

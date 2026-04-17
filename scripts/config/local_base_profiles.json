@@ -1,0 +1,14 @@
+[
+  {
+    "id": "csk3021-heater-en-generic-v2.0_f2.0.3_a1.7.1.0",
+    "productLabel": "取暖器",
+    "sceneLabel": "纯离线",
+    "moduleBoard": "CSK3021-CHIP",
+    "language": "英文",
+    "versionLabel": "通用垂类-V2.0_F2.0.3_A1.7.1.0",
+    "sharedProductName": "3021-取暖器-英文通用版本-0408",
+    "preferredSourceReleaseId": "2041795582273081345",
+    "algoTemplatePath": "config/base_algo/csk3021_heater_en_generic_v2_0_f2_0_3_a1_7_1_0.json",
+    "xlsxReferencePath": "聆思科技_算法配置英文模板.xlsx"
+  }
+]
