@@ -660,8 +660,11 @@ def resolve_runtime_serials(config: Dict[str, Any], cli_args: argparse.Namespace
     if trace_uart == "0":
         # 当前设备/固件上 traceUart=0 运行态未把启动日志切到 UART0，日志仍固定出现在 UART1。
         runtime_trace_uart = "1"
-    log_port = str(port_map.get(runtime_trace_uart) or getattr(cli_args, "log_port", "") or port_map.get("1") or DEFAULT_TRACE_PORT).strip()
-    protocol_port = str(port_map.get(uport_uart) or getattr(cli_args, "protocol_port", "") or port_map.get("1") or DEFAULT_PROTOCOL_PORT).strip()
+    # The bench wiring is stable and the CLI ports are the source of truth.
+    # Firmware UART metadata is still recorded, but it must not override the
+    # physical ports explicitly passed by the operator for this test station.
+    log_port = str(getattr(cli_args, "log_port", "") or port_map.get(runtime_trace_uart) or port_map.get("1") or DEFAULT_TRACE_PORT).strip()
+    protocol_port = str(getattr(cli_args, "protocol_port", "") or port_map.get(uport_uart) or port_map.get("0") or DEFAULT_PROTOCOL_PORT).strip()
     log_baud = int(uart_cfg.get("trace_baud") or 115200)
     protocol_baud = int(uart_cfg.get("uport_baud") or 9600)
     return {
@@ -1211,7 +1214,13 @@ def device_result_has_issue(device_result: Dict[str, Any], exit_code: int) -> bo
         return True
     if not isinstance(device_result, dict):
         return True
-    if device_result.get("finalFailures"):
+    final_failures = list(device_result.get("finalFailures") or [])
+    actionable_failures = [
+        item
+        for item in final_failures
+        if scalar_text(item.get("verdict")) not in {"Skip", "Skip(人工)"}
+    ]
+    if actionable_failures:
         return True
     counters = dict(device_result.get("counters") or {})
     for key, value in counters.items():
@@ -2115,6 +2124,20 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
             return "未执行（无烧录工具）"
         return result_summary_text(result)
 
+    def coverage_note(item: Dict[str, Any]) -> str:
+        variant_id = scalar_text(item.get("id"))
+        overrides = item.get("resolvedOverrides") or item.get("overrides") or {}
+        try:
+            timeout_value = int(overrides.get("timeout"))
+        except Exception:
+            timeout_value = 0
+        if variant_id == "pkg-02-left-boundary" and timeout_value <= 1:
+            return (
+                "未执行普通命令词/全功能用例；timeout=1s 时自动链路等待唤醒确认后再播命令会超过命令窗口，"
+                "该包只验证左边界配置、超时、唤醒、播报和串口观察项；命令词全功能由 pkg-01/pkg-03 覆盖。"
+            )
+        return scalar_text(item.get("coverageNote"))
+
     def execution_result_text(item: Dict[str, Any]) -> str:
         human_result = scalar_text(item.get("humanResult"))
         if human_result:
@@ -2130,6 +2153,9 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
         if human_evidence:
             return escape(human_evidence)
         failures = find_variant_failure_details(task_dir, variant_id, scalar_text(item.get("status")), item.get("deviceResult"))[:2] or ["无失败项"]
+        note = coverage_note(item)
+        if note and failures == ["无失败项"]:
+            failures = [f"未测/裁剪：{note}"]
         return "<br>".join(escape(text) for text in failures)
 
     def result_dir_text(item: Dict[str, Any]) -> str:
@@ -2170,6 +2196,7 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
                 f"- 已执行阶段：{execution_stage_text(item)}",
                 f"- 执行结果：{scalar_text(item.get('humanResult')) or (result_summary_text(item.get('configResult') or {}) + ' / ' + device_exec_text(item.get('deviceResult') or {}))}",
                 f"- 异常/结论：{scalar_text(item.get('humanEvidence')) or '; '.join(find_variant_failure_details(task_dir, variant_id, scalar_text(item.get('status')), item.get('deviceResult'))[:2] or ['无失败项'])}",
+                f"- 未测/裁剪：{coverage_note(item) or '无'}",
                 f"- 结果目录：{bundle.get('relativePath') or '-'}",
                 "",
             ]
@@ -2229,9 +2256,18 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
         f"- 测试时间：`{updated_at}`",
         f"- 结果：`{result_text}`",
         "",
-        "## 参数功能点结果",
-        "",
     ]
+    coverage_notes = [
+        (scalar_text(item.get("id")) or "-", coverage_note(item))
+        for item in variants
+        if coverage_note(item)
+    ]
+    if coverage_notes:
+        summary_lines.extend(["## 未测/裁剪范围", ""])
+        for variant_id, note in coverage_notes:
+            summary_lines.append(f"- `{variant_id}`：{note}")
+        summary_lines.append("")
+    summary_lines.extend(["## 参数功能点结果", ""])
     for item in feature_summary:
         summary_lines.extend(
             [
@@ -2413,6 +2449,9 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
             return scalar_text(item.get("humanResult")) or "存在失败项"
         return scalar_text(item.get("humanResult")) or variant_status_text(status)
 
+    def compact_coverage_note(item: Dict[str, Any]) -> str:
+        return coverage_note(item)
+
     def compact_issue_blocks(item: Dict[str, Any]) -> List[Dict[str, str]]:
         variant_id = scalar_text(item.get("id"))
         failures = list((item.get("deviceResult") or {}).get("finalFailures") or [])
@@ -2532,11 +2571,32 @@ def generate_weekly_email_report(task_dir: Path, runtime_dir: Path, state: Dict[
         f"                    <div class=\"pkg-line\"><span>配置</span><strong>{escape(compact_override_summary(item.get('resolvedOverrides') or item.get('overrides') or {}))}</strong></div>\n"
         f"                    <div class=\"pkg-line\"><span>测试</span><strong>{escape(compact_scope_summary(item))}</strong></div>\n"
         f"                    <div class=\"pkg-line\"><span>结果</span><strong>{escape(compact_variant_result(item))}</strong></div>\n"
-        "                </div>"
+        + (
+            f"                    <div class=\"pkg-line\"><span>未测</span><strong>{escape(compact_coverage_note(item))}</strong></div>\n"
+            if compact_coverage_note(item)
+            else ""
+        )
+        + "                </div>"
         for item in variants
     )
 
     issue_cards: List[str] = []
+    for item in variants:
+        note = compact_coverage_note(item)
+        if not note:
+            continue
+        issue_cards.append(
+            "                <div class=\"issue-card issue-ok\">\n"
+            f"                    <div class=\"issue-head\">{escape(scalar_text(item.get('title')) or scalar_text(item.get('id')) or '-')} - 未测范围说明</div>\n"
+            f"                    <div class=\"issue-meta\">{escape(compact_override_summary(item.get('resolvedOverrides') or item.get('overrides') or {}))}</div>\n"
+            "                    <div class=\"issue-line\">\n"
+            "                        <div class=\"issue-title\">范围裁剪说明</div>\n"
+            f"                        <div class=\"issue-text\"><span>现象</span>{escape(note)}</div>\n"
+            "                        <div class=\"issue-text\"><span>预期</span>未执行范围必须在邮件正文和附件 summary 中明确说明，不能写成全功能通过。</div>\n"
+            "                        <div class=\"issue-text\"><span>分析</span>这是测试范围裁剪说明，不是设备功能失败。</div>\n"
+            "                    </div>\n"
+            "                </div>"
+        )
     for item in variants:
         status = scalar_text(item.get("status"))
         if status not in issue_statuses:
@@ -2743,6 +2803,28 @@ def build_variant_rows(base_rows: Sequence[Dict[str, Any]], spec: Dict[str, Any]
     return [dict(item) for item in (suite_payload.get("rows") or [])]
 
 
+def adapt_suite_payload_for_variant(suite_payload: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
+    overrides = spec.get("overrides") or {}
+    try:
+        timeout_value = int(overrides.get("timeout"))
+    except Exception:
+        timeout_value = 0
+    if spec.get("id") == "pkg-02-left-boundary" and timeout_value and timeout_value <= 1:
+        rows = [dict(item) for item in (suite_payload.get("rows") or [])]
+        suite_payload["rows"] = [
+            item for item in rows
+            if not str(item.get("用例编号") or "").startswith("CORE-CMD-")
+        ]
+        metadata = suite_payload.setdefault("metadata", {})
+        notes = metadata.setdefault("executionNotes", [])
+        if isinstance(notes, list):
+            notes.append(
+                "pkg-02 timeout=1s: 未执行普通 CORE-CMD 命令词/全功能用例；"
+                "该包只验证 timeout 左边界、配置边界、唤醒、播报和串口观察项，命令词全功能由 pkg-01/pkg-03 覆盖。"
+            )
+    return suite_payload
+
+
 def main() -> int:
     args = build_parser().parse_args()
     if args.update_audio_skills:
@@ -2906,6 +2988,7 @@ def main() -> int:
                     },
                     selected_meta=selected,
                 )
+                suite_payload = adapt_suite_payload_for_variant(suite_payload, spec)
                 device_info = dict(suite_payload.get("deviceInfo") or {})
                 seeded = seed_audio(device_info, suite_dir)
                 export_suite(suite_dir, suite_payload)

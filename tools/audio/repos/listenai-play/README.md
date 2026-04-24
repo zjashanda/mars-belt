@@ -8,7 +8,14 @@ Scan active device keys, install or refresh the laid command when needed, and pl
 - `scripts/install_laid_linux.sh`
 - `scripts/install_laid_windows.ps1`
 - `scripts/listenai_play.py`
+- `sndcard-ioctrl-adc&pdm2uac-cdc_20250826.bin`
+- `声卡命令.txt`
 - `SKILL.md`
+
+## Extra files
+
+- `sndcard-ioctrl-adc&pdm2uac-cdc_20250826.bin`: sound card sub-board firmware. Flash this firmware before use.
+- `声卡命令.txt`: sound card sub-board command guide.
 
 ## Install the skill
 
@@ -105,3 +112,4 @@ Use `scripts/listenai_play.py` as the single entrypoint for scan, laid bootstrap
 - `scripts/listenai_play.py`: Cross-platform CLI for laid bootstrap, scanning device keys, probing default or specified devices, and running single or dual playback with preflight validation.
 - `scripts/install_laid_windows.ps1`: Bundled PowerShell installer copied from `listenai-laid-installer` for profile-based laid installation.
 - `scripts/install_laid_linux.sh`: Bundled bash/zsh installer copied from `listenai-laid-installer` for profile-based laid installation.
+

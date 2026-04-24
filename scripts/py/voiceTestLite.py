@@ -1242,17 +1242,29 @@ class VoiceTest:
                 self.log.info(f"上电命令发送完毕，等待设备启动 ({self.pretest_boot_wait}s)...")
                 if self._wait_for_boot_signal_window(self.pretest_boot_wait):
                     self.log.info("设备上电完成，已获取到启动日志")
+                    if self.audio_enable_cmds:
+                        self.log.info("上电后补发音频使能命令")
+                        self._send_audio_enable_commands()
+                        time.sleep(0.8)
                     return True
                 self.log.warn("首次等待未捕获到启动日志，尝试重连日志串口后复查")
                 if self.reconnect_serial():
                     if self._wait_for_boot_signal_window(6):
                         self.log.info("设备上电完成，重连日志串口后已获取到启动日志")
+                        if self.audio_enable_cmds:
+                            self.log.info("重连后补发音频使能命令")
+                            self._send_audio_enable_commands()
+                            time.sleep(0.8)
                         return True
                 self.log.warn("重连后仍未捕获到启动日志，尝试盲发 loglevel 4 后复查")
                 try:
                     self._set_runtime_loglevel_via_helper(4)
                     if self.reconnect_serial() and self._wait_for_boot_signal_window(6):
                         self.log.info("设备上电完成，盲发 loglevel 4 后已获取到启动日志")
+                        if self.audio_enable_cmds:
+                            self.log.info("盲发 loglevel 后补发音频使能命令")
+                            self._send_audio_enable_commands()
+                            time.sleep(0.8)
                         return True
                 except Exception as force_exc:
                     self.log.warn(f"盲发 loglevel 4 失败: {force_exc}")

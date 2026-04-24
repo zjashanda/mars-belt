@@ -1244,8 +1244,10 @@ def build_device_runner(base_module):
                         status = self._classify_wakeup_ready_failure(ready_detail)
                         self._set_last_wakeup_state(status, last_detail)
                         self.log.warn(f"  唤醒后命令窗口未就绪: {last_detail}")
-                        if status in {"command-window-expired", "wake-rejected"}:
+                        if status == "command-window-expired":
                             return False, last_detail
+                        if status == "wake-rejected":
+                            break
                         break
                     time.sleep(0.05)
                 rebooted, reboot_detail = self._unexpected_reboot_since(attempt_reboot_base)
@@ -1333,6 +1335,11 @@ def build_device_runner(base_module):
             meta = self._suite_meta(tc)
             return parse_json_cell(meta.get("打包参数", "{}"))
 
+        def _voice_reg_control_phrase(self, tc: Dict[str, str], key: str, fallback: str) -> str:
+            overrides = self._voice_reg_pack_args(tc)
+            value = str(overrides.get(key) or "").strip()
+            return value or fallback
+
         def _voice_reg_selected_command(self, tc: Dict[str, str]) -> str:
             overrides = self._voice_reg_pack_args(tc)
             selected = str(overrides.get("voiceRegSelectedCommand") or "").strip()
@@ -1352,6 +1359,10 @@ def build_device_runner(base_module):
         def _voice_reg_virtual_wake_intent(self, tc: Dict[str, str]) -> str:
             overrides = self._voice_reg_pack_args(tc)
             return str(overrides.get("voiceRegVirtualWakeIntent") or "虚拟语音注册唤醒意图").strip()
+
+        def _voice_reg_regist_mode(self, tc: Dict[str, str]) -> str:
+            overrides = self._voice_reg_pack_args(tc)
+            return str(overrides.get("voiceRegRegistMode") or "specificLearn").strip() or "specificLearn"
 
         def _voice_reg_command_repeat_count(self, tc: Dict[str, str]) -> int:
             overrides = self._voice_reg_pack_args(tc)
@@ -1382,6 +1393,23 @@ def build_device_runner(base_module):
             if not self.reader:
                 return []
             return [self._sanitize_serial_line(line) for line in self.reader.get_recent_lines()[-limit:]]
+
+        def _voice_reg_recent_learning_marker_summary(self, limit: int = 240, tail: int = 6) -> str:
+            markers: List[str] = []
+            for line in self._recent_sanitized_lines(limit):
+                lowered = line.lower()
+                if (
+                    "study get action type:" in line
+                    or "cmdlist get[" in lowered
+                    or "reg info:" in line
+                    or "reg wake word:" in line
+                    or "voice reg type:" in line
+                    or "algo restart" in lowered
+                ):
+                    markers.append(line.strip())
+            if not markers:
+                return ""
+            return " || ".join(markers[-max(1, tail):])
 
         def _parse_recent_reg_state(self, limit: int = 240) -> Dict[str, Any]:
             status: Optional[int] = None
@@ -1434,6 +1462,7 @@ def build_device_runner(base_module):
             stop_line = ""
             stop_idx = -1
             process_words: List[str] = []
+            quit_words: List[str] = []
 
             for idx, line in enumerate(lines):
                 lowered = line.lower()
@@ -1447,6 +1476,22 @@ def build_device_runner(base_module):
                     last_event_idx = idx
                 elif "reg length error!" in line:
                     last_event = "length_error"
+                    last_event_line = line
+                    last_event_idx = idx
+                elif "reg auto next!" in line:
+                    last_event = "auto_next"
+                    last_event_line = line
+                    last_event_idx = idx
+                elif "reg cmd over success!" in line:
+                    last_event = "cmd_over_success"
+                    last_event_line = line
+                    last_event_idx = idx
+                elif "reg over!" in line:
+                    last_event = "over"
+                    last_event_line = line
+                    last_event_idx = idx
+                elif "reg del" in line:
+                    last_event = "delete"
                     last_event_line = line
                     last_event_idx = idx
                 elif "reg success!" in line:
@@ -1467,6 +1512,14 @@ def build_device_runner(base_module):
                 match = re.search(r"reging process keyword:\s*(.*)", line)
                 if match:
                     process_words.append(match.group(1).strip())
+                match = re.search(r"reging user quit process keyword:\s*(.*)", line)
+                if match:
+                    quit_word = match.group(1).strip()
+                    if quit_word:
+                        quit_words.append(quit_word)
+                    last_event = "user_quit"
+                    last_event_line = line
+                    last_event_idx = idx
 
                 if "play stop" in lowered:
                     stop_line = line
@@ -1495,8 +1548,13 @@ def build_device_runner(base_module):
                     "again": 1,
                     "similar_error": 1,
                     "length_error": 1,
+                    "auto_next": 1,
+                    "cmd_over_success": 3,
                     "success": 3,
                     "failed": 4,
+                    "user_quit": 6,
+                    "over": 3,
+                    "delete": 7,
                 }.get(last_event)
 
             return {
@@ -1515,6 +1573,7 @@ def build_device_runner(base_module):
                 "stop_after_event_idx": stop_after_event_idx,
                 "failed": last_event == "failed",
                 "process_words": process_words,
+                "quit_words": quit_words,
                 "lines": lines,
             }
 
@@ -1552,11 +1611,11 @@ def build_device_runner(base_module):
                 stop_after_event = bool(cycle.get("stop_after_event_line"))
 
                 if expect_in_progress:
-                    if event in {"again", "similar_error", "length_error"} and status == 1 and stop_after_event:
+                    if event in {"again", "similar_error", "length_error", "auto_next"} and status == 1 and stop_after_event:
                         time.sleep(max(float(settle_seconds), 0.1))
                         return cycle
                 else:
-                    if event in {"success", "failed"} and status in {3, 4} and stop_after_event:
+                    if event in {"success", "cmd_over_success", "failed"} and status in {3, 4} and stop_after_event:
                         time.sleep(max(float(settle_seconds), 0.1))
                         return cycle
                 time.sleep(0.05)
@@ -1728,9 +1787,10 @@ def build_device_runner(base_module):
                     return True
             return False
 
-        def _voice_reg_clear_all_command_aliases(self, idx: Any) -> Tuple[bool, str]:
+        def _voice_reg_clear_all_command_aliases(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, str]:
+            clear_all_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteAllCommandEntry", "删除全部命令词")
             verdict, row = self._run_command_step_with_override(
-                "删除全部命令词",
+                clear_all_phrase,
                 f"{idx}-clear-all-command",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -1742,9 +1802,57 @@ def build_device_runner(base_module):
             )
             return verdict == "OK" and recover_ok, detail
 
-        def _voice_reg_clear_current_wakeup_alias(self, idx: Any) -> Tuple[bool, str]:
+        def _voice_reg_clear_current_command_alias(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, str]:
+            delete_command_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteCommandEntry", "删除命令词")
+            detail_parts = []
             verdict, row = self._run_command_step_with_override(
-                "删除唤醒词",
+                delete_command_phrase,
+                f"{idx}-clear-current-command-entry",
+                timeout_seconds=4.5,
+                do_wakeup=True,
+            )
+            detail_parts.append(
+                f"entry={verdict} raw={row.get('识别原始结果', '')} recog={row.get('识别结果', '')}"
+            )
+            if verdict != "OK":
+                return False, " | ".join(detail_parts)
+
+            prompt_ok, prompt_detail = self._wait_for_voice_reg_prompt_complete(timeout_seconds=6.0)
+            detail_parts.append(f"prompt={prompt_detail}")
+            if not prompt_ok:
+                time.sleep(0.5)
+
+            confirm_verdict, confirm_row = self._run_command_step_with_override(
+                delete_command_phrase,
+                f"{idx}-clear-current-command-confirm",
+                expected_proto=None,
+                timeout_seconds=5.0,
+                do_wakeup=False,
+            )
+            detail_parts.append(
+                f"confirm={confirm_verdict} raw={confirm_row.get('识别原始结果', '')} recog={confirm_row.get('识别结果', '')}"
+            )
+            if confirm_verdict != "OK":
+                return False, " | ".join(detail_parts)
+
+            recover_ok, recover_detail = self._recover_after_voice_reg_reboot(timeout_seconds=6.0)
+            detail_parts.append(f"recover={recover_detail}")
+            time.sleep(1.0)
+            return recover_ok, " | ".join(detail_parts)
+
+        def _voice_reg_prepare_command_learning_reset(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, str]:
+            regist_mode = self._voice_reg_regist_mode(tc)
+            if regist_mode == "contLearn":
+                clear_ok, clear_detail = self._voice_reg_clear_current_command_alias(tc, f"{idx}-clear-current")
+                return clear_ok, f"mode={regist_mode} strategy=clear-current-command | {clear_detail}"
+
+            clear_ok, clear_detail = self._voice_reg_clear_all_command_aliases(tc, f"{idx}-clear-all")
+            return clear_ok, f"mode={regist_mode} strategy=clear-all-command | {clear_detail}"
+
+        def _voice_reg_clear_current_wakeup_alias(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, str]:
+            delete_wake_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteWakeEntry", "删除唤醒词")
+            verdict, row = self._run_command_step_with_override(
+                delete_wake_phrase,
                 f"{idx}-clear-current-wakeup-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -1761,7 +1869,7 @@ def build_device_runner(base_module):
                 time.sleep(0.5)
 
             confirm_verdict, confirm_row = self._run_command_step_with_override(
-                "删除唤醒词",
+                delete_wake_phrase,
                 f"{idx}-clear-current-wakeup-confirm",
                 expected_proto=None,
                 timeout_seconds=5.0,
@@ -1849,6 +1957,7 @@ def build_device_runner(base_module):
             phrase: str,
             *,
             expect_in_progress: bool,
+            allow_auto_next_success: bool = False,
             timeout_seconds: float = 8.0,
         ) -> Tuple[bool, str, Dict[str, Any]]:
             capture = self._capture_phrase(phrase, timeout_seconds=timeout_seconds, do_wakeup=False, tag="asrKw")
@@ -1865,13 +1974,24 @@ def build_device_runner(base_module):
             prompt_detail = str(state.get("stop_after_event_line") or state.get("stop_line") or "prompt-stop-missing")
             event = str(state.get("event") or "")
             if expect_in_progress:
-                ok = event in {"again", "similar_error", "length_error"} and status == 1 and prompt_ok
+                ok = (
+                    status == 1
+                    and prompt_ok
+                    and (
+                        event in {"again", "similar_error", "length_error", "auto_next"}
+                        or bool(state.get("process_words"))
+                    )
+                )
             else:
-                ok = event in {"success", "failed"} and status in {3, 4} and prompt_ok
+                ok = (
+                    (event in {"success", "cmd_over_success", "failed"} and status in {3, 4} and prompt_ok)
+                    or (allow_auto_next_success and event == "auto_next" and status == 1 and prompt_ok)
+                )
             detail = (
                 f"phrase={phrase} raws={capture.get('raws', [])} texts={capture.get('texts', [])} "
                 f"prompt={prompt_detail} prompt_ok={prompt_ok} "
-                f"event={event} status={status} failed={state.get('failed')} process={state.get('process_words', [])}"
+                f"event={event} status={status} failed={state.get('failed')} "
+                f"process={state.get('process_words', [])} quit={state.get('quit_words', [])}"
             )
             if state.get("event_line"):
                 detail += f" event_line={state.get('event_line')}"
@@ -1922,7 +2042,11 @@ def build_device_runner(base_module):
             accepted = [str(item or "").strip() for item in accepted_results if str(item or "").strip()]
             wake_ok, wake_detail = self._wakeup_phrase_until_ready(
                 alias_phrase,
-                max_retry=max(1, int(getattr(self, "wakeup_retry_limit", 10) or 10)),
+                max_retry=(
+                    max(1, int(getattr(self, "wakeup_retry_limit", 10) or 10))
+                    if should_work
+                    else 3
+                ),
                 detect_timeout_seconds=max(float(timeout_seconds), 1.0),
                 ready_timeout_seconds=max(float(timeout_seconds), 4.5),
                 allow_reg_result=False,
@@ -1972,13 +2096,19 @@ def build_device_runner(base_module):
 
         def _voice_reg_enter_command_learning_session(
             self,
+            tc: Dict[str, str],
             idx: Any,
             *,
             selected_command: str,
+            allow_clear_retry: bool = True,
         ) -> Tuple[bool, List[str]]:
             steps: List[str] = []
+            regist_mode = self._voice_reg_regist_mode(tc)
+            steps.append(f"regist-mode={regist_mode}")
+            self._clear_recent_serial_lines()
+            learn_command_phrase = self._voice_reg_control_phrase(tc, "voiceRegLearnCommandEntry", "学习命令词")
             entry_verdict, entry_row = self._run_command_step_with_override(
-                "学习命令词",
+                learn_command_phrase,
                 f"{idx}-cmd-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -1993,6 +2123,67 @@ def build_device_runner(base_module):
             steps.append(f"entry-prompt={prompt_detail}")
             if not prompt_ok:
                 time.sleep(0.6)
+
+            direct_state = self._wait_for_reg_state(True, timeout_seconds=6.0)
+            steps.append(
+                f"entry-state=status={direct_state.get('status')} failed={direct_state.get('failed')} "
+                f"process={direct_state.get('process_words', [])}"
+            )
+            entry_markers = self._voice_reg_recent_learning_marker_summary()
+            if entry_markers:
+                steps.append(f"entry-markers={entry_markers}")
+            direct_ready = (not direct_state.get("failed")) and direct_state.get("status") == 1
+            if direct_ready:
+                steps.append("entry-mode=direct-learning")
+                time.sleep(0.8)
+                return True, steps
+
+            if regist_mode == "contLearn":
+                late_state = self._wait_for_reg_state(True, timeout_seconds=4.0)
+                steps.append(
+                    f"entry-late-state=status={late_state.get('status')} failed={late_state.get('failed')} "
+                    f"process={late_state.get('process_words', [])}"
+                )
+                late_cycle = self._parse_recent_voice_reg_cycle()
+                if late_cycle.get("event"):
+                    steps.append(
+                        f"entry-cycle=event={late_cycle.get('event')} status={late_cycle.get('status')} "
+                        f"line={late_cycle.get('event_line')}"
+                    )
+                late_markers = self._voice_reg_recent_learning_marker_summary()
+                if late_markers and late_markers != entry_markers:
+                    steps.append(f"entry-late-markers={late_markers}")
+                late_ready = (not late_state.get("failed")) and late_state.get("status") == 1
+                if late_ready:
+                    steps.append("entry-mode=direct-learning-delayed")
+                    time.sleep(0.8)
+                    return True, steps
+                if late_cycle.get("event") == "over":
+                    steps.append("entry-mode=direct-learning-full")
+                    if allow_clear_retry:
+                        clear_ok, clear_detail = self._voice_reg_clear_current_command_alias(
+                            tc,
+                            f"{idx}-entry-clear-current-command",
+                        )
+                        steps.append(f"entry-full-clear-command={clear_detail}")
+                        if clear_ok:
+                            retry_ok, retry_steps = self._voice_reg_enter_command_learning_session(
+                                tc,
+                                f"{idx}-entry-retry",
+                                selected_command=selected_command,
+                                allow_clear_retry=False,
+                            )
+                            steps.extend([f"retry:{item}" for item in retry_steps])
+                            return retry_ok, steps
+                    return False, steps
+                if late_state.get("status") is None and not late_state.get("failed"):
+                    steps.append("entry-mode=direct-learning-no-ready-marker-fallback")
+                    time.sleep(0.8)
+                    return True, steps
+                steps.append("entry-mode=direct-learning-no-ready-marker")
+                return False, steps
+
+            steps.append("entry-mode=select-command")
 
             self._clear_recent_serial_lines()
             select_verdict, select_row = self._run_command_step_with_override(
@@ -2013,23 +2204,93 @@ def build_device_runner(base_module):
             if not prompt_ok:
                 time.sleep(0.6)
 
-            state = self._wait_for_reg_state(True, timeout_seconds=6.0)
+            state = self._wait_for_reg_state(True, timeout_seconds=8.0)
             steps.append(
                 f"select-state=status={state.get('status')} failed={state.get('failed')} process={state.get('process_words', [])}"
             )
-            ready = (not state.get("failed")) and (
-                state.get("status") == 1 or (state.get("status") is None and prompt_ok)
-            )
+            select_markers = self._voice_reg_recent_learning_marker_summary()
+            if select_markers:
+                steps.append(f"select-markers={select_markers}")
+            ready = (not state.get("failed")) and state.get("status") == 1
             if not ready:
+                if prompt_ok and select_markers:
+                    steps.append("select-ready-by-marker")
+                    time.sleep(0.8)
+                    return True, steps
+                if prompt_ok and not select_markers:
+                    steps.append("select-no-learning-marker")
+                elif prompt_ok and select_markers:
+                    steps.append("select-learning-marker-without-status1")
                 return False, steps
             time.sleep(0.8)
             return True, steps
 
-        def _voice_reg_enter_wakeup_learning_session(self, idx: Any) -> Tuple[bool, List[str]]:
+        def _voice_reg_exit_learning_session(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, List[str]]:
             steps: List[str] = []
             self._clear_recent_serial_lines()
+            exit_learn_phrase = self._voice_reg_control_phrase(tc, "voiceRegExitLearnEntry", "退出学习")
+            exit_verdict, exit_row = self._run_command_step_with_override(
+                exit_learn_phrase,
+                f"{idx}-exit-learning",
+                expected_proto=None,
+                timeout_seconds=5.0,
+                do_wakeup=False,
+            )
+            steps.append(
+                f"exit-learning={exit_verdict} raw={exit_row.get('识别原始结果', '')} recog={exit_row.get('识别结果', '')}"
+            )
+            if exit_verdict != "OK":
+                return False, steps
+
+            prompt_ok, prompt_detail = self._wait_for_voice_reg_prompt_complete(timeout_seconds=8.0)
+            steps.append(f"exit-learning-prompt={prompt_detail}")
+            if not prompt_ok:
+                time.sleep(0.6)
+
+            state = self._wait_for_reg_state(False, timeout_seconds=6.5)
+            steps.append(
+                f"exit-learning-state=status={state.get('status')} failed={state.get('failed')} "
+                f"process={state.get('process_words', [])}"
+            )
+            status = state.get("status")
+            ready = (not state.get("failed")) and (
+                status in {3, 6, 7} or (status is None and prompt_ok)
+            )
+            return ready, steps
+
+        def _voice_reg_finalize_negative_learning_session(
+            self,
+            tc: Dict[str, str],
+            idx: Any,
+            steps: List[str],
+        ) -> bool:
+            state = self._wait_for_reg_state(None, timeout_seconds=2.5)
+            steps.append(
+                f"post-negative-state=status={state.get('status')} failed={state.get('failed')} "
+                f"process={state.get('process_words', [])} quit={state.get('quit_words', [])}"
+            )
+            status = state.get("status")
+            if state.get("failed") or status in {4, 6, 7}:
+                steps.append("learning-terminal=explicit-or-closed-reject")
+                return True
+            if status == 3:
+                steps.append("unexpected-learning-success-post-state")
+                return False
+
+            exit_ok, exit_steps = self._voice_reg_exit_learning_session(tc, f"{idx}-negative-exit")
+            steps.extend([f"exit-learning:{item}" for item in exit_steps])
+            if not exit_ok:
+                steps.append("learning-terminal=negative-exit-failed")
+                return False
+            steps.append("learning-terminal=silent-reject")
+            return True
+
+        def _voice_reg_enter_wakeup_learning_session(self, tc: Dict[str, str], idx: Any) -> Tuple[bool, List[str]]:
+            steps: List[str] = []
+            self._clear_recent_serial_lines()
+            learn_wake_phrase = self._voice_reg_control_phrase(tc, "voiceRegLearnWakeEntry", "学习唤醒词")
             entry_verdict, entry_row = self._run_command_step_with_override(
-                "学习唤醒词",
+                learn_wake_phrase,
                 f"{idx}-wake-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -2380,7 +2641,7 @@ def build_device_runner(base_module):
             command_entry = self._voice_reg_command_entry(selected_command) or {}
             expected_proto = normalize_hex_protocol(command_entry.get("snd_protocol") or command_entry.get("sndProtocol") or "")
 
-            clear_ok, clear_detail = self._voice_reg_clear_all_command_aliases(f"{idx}-prepare")
+            clear_ok, clear_detail = self._voice_reg_prepare_command_learning_reset(tc, f"{idx}-prepare")
             steps.append(f"prepare-clear-command={clear_detail}")
             if not clear_ok:
                 return False, steps, expected_proto
@@ -2406,6 +2667,7 @@ def build_device_runner(base_module):
                     return False, steps, expected_proto
 
             entered_ok, entry_steps = self._voice_reg_enter_command_learning_session(
+                tc,
                 idx,
                 selected_command=selected_command,
             )
@@ -2417,10 +2679,18 @@ def build_device_runner(base_module):
                 ok, detail, _ = self._voice_reg_submit_learning_phrase(
                     learned_command,
                     expect_in_progress=attempt < repeat_count,
+                    allow_auto_next_success=attempt == repeat_count,
                 )
                 steps.append(f"learn-{attempt}/{repeat_count}={detail}")
                 if not ok:
                     return False, steps, expected_proto
+                if attempt == repeat_count:
+                    final_state = self._parse_recent_voice_reg_cycle()
+                    if final_state.get("event") == "auto_next" and final_state.get("status") == 1:
+                        exit_ok, exit_steps = self._voice_reg_exit_learning_session(tc, f"{idx}-auto-next")
+                        steps.extend([f"exit-learning:{item}" for item in exit_steps])
+                        if not exit_ok:
+                            return False, steps, expected_proto
                 time.sleep(0.8)
 
             verify_ok, verify_detail = self._voice_reg_verify_command_alias(
@@ -2444,7 +2714,7 @@ def build_device_runner(base_module):
             steps: List[str] = []
             accepted_results = [learned_wake_word, virtual_wake_intent]
 
-            clear_ok, clear_detail = self._voice_reg_clear_current_wakeup_alias(f"{idx}-prepare")
+            clear_ok, clear_detail = self._voice_reg_clear_current_wakeup_alias(tc, f"{idx}-prepare")
             steps.append(f"prepare-clear-wakeup={clear_detail}")
             if not clear_ok:
                 return False, steps
@@ -2467,7 +2737,7 @@ def build_device_runner(base_module):
                 if not cleanup_ok:
                     return False, steps
 
-            entered_ok, entry_steps = self._voice_reg_enter_wakeup_learning_session(idx)
+            entered_ok, entry_steps = self._voice_reg_enter_wakeup_learning_session(tc, idx)
             steps.extend(entry_steps)
             if not entered_ok:
                 return False, steps
@@ -2501,6 +2771,7 @@ def build_device_runner(base_module):
             ensure_present: bool = True,
         ) -> Tuple[bool, List[str]]:
             steps: List[str] = []
+            delete_command_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteCommandEntry", "删除命令词")
             if ensure_present:
                 present_ok, present_detail, _ = self._voice_reg_ensure_command_alias_present(
                     tc,
@@ -2512,10 +2783,37 @@ def build_device_runner(base_module):
                 if not present_ok:
                     return False, steps
 
+            if self._voice_reg_regist_mode(tc) == "contLearn":
+                clear_ok, clear_detail = self._voice_reg_clear_current_command_alias(tc, f"{idx}-delete-current")
+                steps.append(f"delete-current={clear_detail}")
+                if not clear_ok:
+                    return False, steps
+                time.sleep(1.0)
+
+                absent_ok, absent_detail = self._voice_reg_verify_command_alias(
+                    learned_command,
+                    selected_command,
+                    expected_proto,
+                    should_work=False,
+                )
+                steps.append(f"verify-alias-removed={absent_detail}")
+                if not absent_ok:
+                    return False, steps
+
+                default_verdict, default_row = self._test_one_with_override(
+                    selected_command,
+                    f"{idx}-default-after-delete",
+                    expected_proto=expected_proto,
+                )
+                steps.append(
+                    f"default-command-after-delete={default_verdict} raw={default_row.get('识别原始结果', '')} recog={default_row.get('识别结果', '')} send={default_row.get('实际发送协议', '')}"
+                )
+                return default_verdict == "OK", steps
+
             delete_targets = [learned_command] if learned_command else [selected_command]
             for target in delete_targets:
                 entry_verdict, entry_row = self._run_command_step_with_override(
-                    "删除命令词",
+                    delete_command_phrase,
                     f"{idx}-delete-entry-{target}",
                     timeout_seconds=4.5,
                     do_wakeup=True,
@@ -2585,6 +2883,7 @@ def build_device_runner(base_module):
         ) -> Tuple[bool, List[str]]:
             steps: List[str] = []
             accepted_results = [learned_wake_word, virtual_wake_intent]
+            delete_wake_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteWakeEntry", "删除唤醒词")
             if ensure_present:
                 present_ok, present_detail, _ = self._voice_reg_ensure_wakeup_alias_present(
                     tc,
@@ -2597,7 +2896,7 @@ def build_device_runner(base_module):
                     return False, steps
 
             entry_verdict, entry_row = self._run_command_step_with_override(
-                "删除唤醒词",
+                delete_wake_phrase,
                 f"{idx}-delete-wake-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -2613,7 +2912,7 @@ def build_device_runner(base_module):
             if not prompt_ok:
                 time.sleep(0.5)
             confirm_verdict, confirm_row = self._run_command_step_with_override(
-                "删除唤醒词",
+                delete_wake_phrase,
                 f"{idx}-delete-wake-confirm",
                 expected_proto=None,
                 timeout_seconds=5.0,
@@ -2840,7 +3139,7 @@ def build_device_runner(base_module):
             if verify_target_command == selected_command or not verify_proto:
                 verify_proto = selected_proto
 
-            clear_ok, clear_detail = self._voice_reg_clear_all_command_aliases(f"{idx}-prepare")
+            clear_ok, clear_detail = self._voice_reg_prepare_command_learning_reset(tc, f"{idx}-prepare")
             steps.append(f"prepare-clear-command={clear_detail}")
             if not clear_ok:
                 return False, steps, verify_proto
@@ -2857,6 +3156,7 @@ def build_device_runner(base_module):
                     return False, steps, verify_proto
 
             entered_ok, entry_steps = self._voice_reg_enter_command_learning_session(
+                tc,
                 f"{idx}-sequence",
                 selected_command=selected_command,
             )
@@ -2871,6 +3171,7 @@ def build_device_runner(base_module):
                 ok, detail, state = self._voice_reg_submit_learning_phrase(
                     phrase,
                     expect_in_progress=attempt < total,
+                    allow_auto_next_success=expect_learning_success and attempt == total,
                 )
                 steps.append(f"learn-{attempt}/{total}={detail}")
                 status = state.get("status")
@@ -2885,16 +3186,26 @@ def build_device_runner(base_module):
                         break
                     steps.append("unexpected-learning-success")
                     return False, steps, verify_proto
+                if expect_learning_success and state.get("event") == "auto_next" and status == 1:
+                    learning_succeeded = True
+                    steps.append("learning-terminal=auto-next")
+                    exit_ok, exit_steps = self._voice_reg_exit_learning_session(tc, f"{idx}-sequence-auto-next")
+                    steps.extend([f"exit-learning:{item}" for item in exit_steps])
+                    if not exit_ok:
+                        return False, steps, verify_proto
+                    break
                 if not ok:
-                    return False, steps, verify_proto
+                    if expect_learning_success:
+                        return False, steps, verify_proto
                 time.sleep(0.8)
 
             if expect_learning_success and not learning_succeeded:
                 steps.append("learning-terminal=missing-success-status")
                 return False, steps, verify_proto
             if not expect_learning_success and not learning_failed:
-                steps.append("learning-terminal=missing-failure-status")
-                return False, steps, verify_proto
+                learning_failed = self._voice_reg_finalize_negative_learning_session(tc, idx, steps)
+                if not learning_failed:
+                    return False, steps, verify_proto
 
             verify_ok = True
             if verify_phrase:
@@ -2929,8 +3240,10 @@ def build_device_runner(base_module):
             expect_learning_success: bool,
         ) -> Tuple[bool, List[str]]:
             steps: List[str] = []
+            meta = self._suite_meta(tc)
+            scenario = str((self._runtime_assert_data(meta) or {}).get("voiceRegScenario") or "").strip()
 
-            clear_ok, clear_detail = self._voice_reg_clear_current_wakeup_alias(f"{idx}-prepare")
+            clear_ok, clear_detail = self._voice_reg_clear_current_wakeup_alias(tc, f"{idx}-prepare")
             steps.append(f"prepare-clear-wakeup={clear_detail}")
             if not clear_ok:
                 steps.append("prepare-clear-wakeup=continue-after-clear-fail")
@@ -2945,7 +3258,7 @@ def build_device_runner(base_module):
                 if not pre_absent_ok:
                     return False, steps
 
-            entered_ok, entry_steps = self._voice_reg_enter_wakeup_learning_session(f"{idx}-sequence")
+            entered_ok, entry_steps = self._voice_reg_enter_wakeup_learning_session(tc, f"{idx}-sequence")
             steps.extend(entry_steps)
             if not entered_ok:
                 return False, steps
@@ -2972,17 +3285,20 @@ def build_device_runner(base_module):
                     steps.append("unexpected-learning-success")
                     return False, steps
                 if not ok:
-                    return False, steps
+                    if expect_learning_success:
+                        return False, steps
                 time.sleep(0.8)
 
             if expect_learning_success and not learning_succeeded:
                 steps.append("learning-terminal=missing-success-status")
                 return False, steps
             if not expect_learning_success and not learning_failed:
-                steps.append("learning-terminal=missing-failure-status")
-                return False, steps
+                learning_failed = self._voice_reg_finalize_negative_learning_session(tc, idx, steps)
+                if not learning_failed:
+                    return False, steps
 
             verify_ok = True
+            verify_detail = ""
             if verify_phrase:
                 verify_ok, verify_detail = self._voice_reg_verify_wakeup_alias(
                     verify_phrase,
@@ -2993,6 +3309,20 @@ def build_device_runner(base_module):
 
             default_wakeup_ok = self.wakeup()
             steps.append(f"default-wakeup-check={default_wakeup_ok}")
+            if (
+                scenario in {"wakeup_default_conflict", "wakeup_reserved_conflict"}
+                and not expect_learning_success
+                and verify_should_work
+                and not verify_ok
+                and default_wakeup_ok
+                and ("wake-rejected" in verify_detail or "cur wk id:" in verify_detail)
+            ):
+                active = self._multi_wke_runtime_active_word()
+                steps.append(
+                    "verify-phrase-nonactive-wakeup=accepted-by-active-wakeup "
+                    f"active={active or self.wakeup_word} detail={verify_detail}"
+                )
+                verify_ok = True
             return verify_ok and default_wakeup_ok, steps
 
         def _voice_reg_delete_command_alias_exit_flow(
@@ -3004,6 +3334,8 @@ def build_device_runner(base_module):
             learned_command: str,
         ) -> Tuple[bool, List[str], str]:
             steps: List[str] = []
+            delete_command_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteCommandEntry", "删除命令词")
+            exit_delete_phrase = self._voice_reg_control_phrase(tc, "voiceRegExitDeleteEntry", "退出删除")
             present_ok, present_detail, expected_proto = self._voice_reg_ensure_command_alias_present(
                 tc,
                 f"{idx}-ensure",
@@ -3015,7 +3347,7 @@ def build_device_runner(base_module):
                 return False, steps, expected_proto
 
             entry_verdict, entry_row = self._run_command_step_with_override(
-                "删除命令词",
+                delete_command_phrase,
                 f"{idx}-delete-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -3032,7 +3364,7 @@ def build_device_runner(base_module):
                 time.sleep(0.5)
 
             exit_verdict, exit_row = self._run_command_step_with_override(
-                "退出删除",
+                exit_delete_phrase,
                 f"{idx}-delete-exit",
                 expected_proto=None,
                 timeout_seconds=4.5,
@@ -3068,6 +3400,8 @@ def build_device_runner(base_module):
         ) -> Tuple[bool, List[str]]:
             steps: List[str] = []
             accepted_results = [learned_wake_word, virtual_wake_intent]
+            delete_wake_phrase = self._voice_reg_control_phrase(tc, "voiceRegDeleteWakeEntry", "删除唤醒词")
+            exit_delete_phrase = self._voice_reg_control_phrase(tc, "voiceRegExitDeleteEntry", "退出删除")
             present_ok, present_detail, _ = self._voice_reg_ensure_wakeup_alias_present(
                 tc,
                 f"{idx}-ensure",
@@ -3079,7 +3413,7 @@ def build_device_runner(base_module):
                 return False, steps
 
             entry_verdict, entry_row = self._run_command_step_with_override(
-                "删除唤醒词",
+                delete_wake_phrase,
                 f"{idx}-delete-entry",
                 timeout_seconds=4.5,
                 do_wakeup=True,
@@ -3096,7 +3430,7 @@ def build_device_runner(base_module):
                 time.sleep(0.5)
 
             exit_verdict, exit_row = self._run_command_step_with_override(
-                "退出删除",
+                exit_delete_phrase,
                 f"{idx}-delete-exit",
                 expected_proto=None,
                 timeout_seconds=4.5,
@@ -3155,7 +3489,7 @@ def build_device_runner(base_module):
                 if scenario == "flow_only":
                     verdict, rows = self._test_voice_reg_flow(tc, idx)
                     return verdict, rows[0]
-                elif scenario in {"command_learn_success", "command_retry_recover", "command_retry_exhaust", "command_supported_conflict", "command_reserved_conflict"}:
+                elif scenario in {"command_learn_success", "command_retry_recover", "command_retry_single_fail", "command_retry_exhaust", "command_supported_conflict", "command_reserved_conflict"}:
                     ok, steps, expected_proto = self._voice_reg_run_command_learning_sequence(
                         tc,
                         idx,
@@ -3166,7 +3500,7 @@ def build_device_runner(base_module):
                         verify_should_work=verify_should_work,
                         expect_learning_success=scenario in {"command_learn_success", "command_retry_recover"},
                     )
-                elif scenario in {"wakeup_learn_success", "wakeup_retry_recover", "wakeup_retry_exhaust", "wakeup_default_conflict", "wakeup_reserved_conflict"}:
+                elif scenario in {"wakeup_learn_success", "wakeup_retry_recover", "wakeup_retry_single_fail", "wakeup_retry_exhaust", "wakeup_default_conflict", "wakeup_reserved_conflict"}:
                     ok, steps = self._voice_reg_run_wakeup_learning_sequence(
                         tc,
                         idx,

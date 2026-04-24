@@ -459,7 +459,7 @@ def generate_email_report(task_dir: Path, result_dir: Path) -> None:
             f"                    <td><span class=\"{status_class}\">{status_text}</span></td>\n"
             "                </tr>"
         )
-        if case_kind(case_id) == "version" and actual_text.endswith(".."):
+        if case_kind(case_id) == "version" and verdict != "OK" and actual_text.endswith(".."):
             notes.append(f"{case_id} 启动日志中的固件版本被截断为 {actual_text}，未获取到完整版本号，按失败判定。")
         if case_kind(case_id) == "cmd" and verdict == "OK":
             retry_match = re.search(r"attempt=(\d+)/(\d+)", xlsx_row.get("设备响应列表", ""))
@@ -781,10 +781,12 @@ def copy_directory_contents(source_dir: Path, destination_dir: Path) -> None:
         return
     destination_dir.mkdir(parents=True, exist_ok=True)
     for item in source_dir.iterdir():
+        if item.is_symlink() and not item.exists():
+            continue
         target = destination_dir / item.name
         if item.is_dir():
             shutil.copytree(item, target, dirs_exist_ok=True)
-        else:
+        elif item.is_file():
             shutil.copy2(item, target)
 
 
@@ -942,6 +944,11 @@ def wait_port(port_name: str, attempts: int, delay_ms: int, log_file: Path) -> N
     raise RuntimeError(f"Timeout waiting for port {port_name}")
 
 
+def log_port_state(port_name: str, log_file: Path, label: str) -> None:
+    state = "present" if port_name in available_ports() else "absent"
+    write_burn_log(log_file, f"{label}: port {port_name} is {state}")
+
+
 def open_serial_port(port_name: str, baud_rate: int, read_timeout: float = 0.5, write_timeout: float = 0.5):
     serial = serial_module()
     return serial.Serial(port_name, baud_rate, timeout=read_timeout, write_timeout=write_timeout)
@@ -953,6 +960,7 @@ def invoke_ctrl_sequence(
     ctrl_baud: int,
     cmd_delay_ms: int,
     log_file: Path,
+    prompt_timeout_ms: int = 2000,
 ) -> None:
     wait_port(ctrl_port, attempts=20, delay_ms=500, log_file=log_file)
     # Use sg dialout for serial port access (preserves audio environment)
@@ -965,6 +973,8 @@ def invoke_ctrl_sequence(
         str(ctrl_baud),
         "--delay-ms",
         str(int(cmd_delay_ms or 0)),
+        "--prompt-timeout-ms",
+        str(int(prompt_timeout_ms or 0)),
         *list(commands),
     ]
     cmd_str = " ".join(shlex.quote(arg) for arg in cmd_args)
@@ -981,14 +991,138 @@ def invoke_ctrl_sequence(
     )
     output = completed.stdout or ""
     if output:
-        write_burn_log(log_file, output.strip())
+        for line in output.strip().splitlines():
+            write_burn_log(log_file, line)
     if completed.returncode != 0:
         write_burn_log(log_file, f"Ctrl sequence failed with code {completed.returncode}")
         raise RuntimeError(f"Ctrl sequence failed: {output}")
 
 
-def enter_burn_mode(ctrl_port: str, ctrl_baud: int, cmd_delay_ms: int, burn_mode_wait_ms: int, log_file: Path) -> None:
+def invoke_ctrl_command(
+    command: str,
+    ctrl_port: str,
+    ctrl_baud: int,
+    cmd_delay_ms: int,
+    log_file: Path,
+    prompt_timeout_ms: int = 2000,
+) -> None:
+    invoke_ctrl_sequence(
+        [command],
+        ctrl_port=ctrl_port,
+        ctrl_baud=ctrl_baud,
+        cmd_delay_ms=cmd_delay_ms,
+        log_file=log_file,
+        prompt_timeout_ms=prompt_timeout_ms,
+    )
+
+
+def wait_ctrl_prompt_ready(
+    ctrl_port: str,
+    ctrl_baud: int,
+    log_file: Path,
+    *,
+    timeout_seconds: float = 15.0,
+) -> None:
+    deadline = time.time() + max(timeout_seconds, 1.0)
+    while time.time() < deadline:
+        try:
+            wait_port(ctrl_port, attempts=1, delay_ms=200, log_file=log_file)
+        except RuntimeError:
+            time.sleep(0.2)
+            continue
+        try:
+            with open_serial_port(ctrl_port, ctrl_baud, read_timeout=0.2, write_timeout=0.2) as port:
+                time.sleep(0.2)
+                try:
+                    port.reset_input_buffer()
+                except Exception:
+                    pass
+                try:
+                    port.write(b"\r\n")
+                    port.flush()
+                except Exception:
+                    pass
+                captured: list[str] = []
+                window_end = time.time() + 1.5
+                while time.time() < window_end:
+                    try:
+                        waiting = port.in_waiting
+                    except Exception:
+                        waiting = 0
+                    data = port.read(waiting or 256)
+                    if data:
+                        text = data.decode("utf-8", errors="ignore")
+                        captured.append(text)
+                        joined = "".join(captured)
+                        if "root:/$" in joined or "root:/" in joined:
+                            write_burn_log(log_file, f"Ctrl prompt detected on {ctrl_port}")
+                            return
+                    time.sleep(0.05)
+        except Exception as exc:
+            write_burn_log(log_file, f"Ctrl prompt wait retry on {ctrl_port}: {exc}")
+        time.sleep(0.2)
+    raise RuntimeError(f"Timeout waiting for ctrl prompt on {ctrl_port}")
+
+
+def reboot_device_before_burn(
+    ctrl_port: str,
+    ctrl_baud: int,
+    log_file: Path,
+    *,
+    prompt_timeout_seconds: float = 15.0,
+) -> None:
+    write_burn_log(log_file, "Pre-burn reboot via ctrl port")
+    wait_port(ctrl_port, attempts=20, delay_ms=500, log_file=log_file)
+    try:
+        with open_serial_port(ctrl_port, ctrl_baud, read_timeout=0.2, write_timeout=0.2) as port:
+            time.sleep(0.2)
+            try:
+                port.reset_input_buffer()
+            except Exception:
+                pass
+            port.write(b"reboot\r\n")
+            port.flush()
+            write_burn_log(log_file, "CTRL SEND reboot")
+            time.sleep(0.2)
+            try:
+                waiting = port.in_waiting
+            except Exception:
+                waiting = 0
+            if waiting:
+                raw = port.read(waiting).decode("utf-8", errors="ignore")
+                if raw:
+                    write_burn_log(log_file, f"CTRL RAW reboot: {raw!r}")
+    except Exception as exc:
+        raise RuntimeError(f"Failed to send reboot on ctrl port {ctrl_port}: {exc}") from exc
+    time.sleep(1.0)
+    wait_ctrl_prompt_ready(
+        ctrl_port,
+        ctrl_baud,
+        log_file,
+        timeout_seconds=prompt_timeout_seconds,
+    )
+
+
+def enter_burn_mode(
+    ctrl_port: str,
+    ctrl_baud: int,
+    burn_port: str,
+    cmd_delay_ms: int,
+    burn_mode_wait_ms: int,
+    log_file: Path,
+    *,
+    pre_burn_reboot: bool = False,
+) -> None:
     write_burn_log(log_file, "Enter burn mode")
+    if pre_burn_reboot:
+        reboot_device_before_burn(ctrl_port, ctrl_baud, log_file)
+    else:
+        write_burn_log(log_file, "Skip pre-burn reboot; use stable 4-step burn entry flow")
+    wait_port(burn_port, attempts=20, delay_ms=500, log_file=log_file)
+    write_burn_log(
+        log_file,
+        "Burn mode 4-step sequence: uut-switch1.off -> uut-switch2.on -> uut-switch1.on -> uut-switch2.off",
+    )
     invoke_ctrl_sequence(
         ["uut-switch1.off", "uut-switch2.on", "uut-switch1.on", "uut-switch2.off"],
         ctrl_port=ctrl_port,
@@ -996,11 +1130,24 @@ def enter_burn_mode(ctrl_port: str, ctrl_baud: int, cmd_delay_ms: int, burn_mode
         cmd_delay_ms=cmd_delay_ms,
         log_file=log_file,
     )
+    log_port_state(burn_port, log_file, "After burn-entry sequence")
+    wait_port(burn_port, attempts=20, delay_ms=300, log_file=log_file)
     time.sleep(burn_mode_wait_ms / 1000.0)
 
 
-def exit_burn_mode(ctrl_port: str, ctrl_baud: int, cmd_delay_ms: int, boot_wait_seconds: int, log_file: Path) -> None:
+def exit_burn_mode(
+    ctrl_port: str,
+    ctrl_baud: int,
+    burn_port: str,
+    cmd_delay_ms: int,
+    boot_wait_seconds: int,
+    log_file: Path,
+) -> None:
     write_burn_log(log_file, "Exit burn mode and restore power")
+    write_burn_log(
+        log_file,
+        "Restore 3-step sequence: uut-switch2.off -> uut-switch1.off -> uut-switch1.on",
+    )
     invoke_ctrl_sequence(
         ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
         ctrl_port=ctrl_port,
@@ -1008,6 +1155,8 @@ def exit_burn_mode(ctrl_port: str, ctrl_baud: int, cmd_delay_ms: int, boot_wait_
         cmd_delay_ms=cmd_delay_ms,
         log_file=log_file,
     )
+    log_port_state(burn_port, log_file, "After restore sequence")
+    wait_port(burn_port, attempts=20, delay_ms=300, log_file=log_file)
     time.sleep(boot_wait_seconds)
 
 
@@ -1123,14 +1272,17 @@ def log_burn_output_tail(content: str, log_file: Path, *, limit: int = 20) -> No
 def invoke_burn_tool(tool_path: Path, fw_path: Path, burn_port: str, baud: int, log_file: Path) -> None:
     wait_port(burn_port, attempts=20, delay_ms=500, log_file=log_file)
     tool_output = burn_log_dir() / f"burn_tool_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    staged_fw = (BURN_ROOT / "app.bin").resolve()
+    if fw_path.resolve() != staged_fw:
+        raise RuntimeError(f"Refuse to burn non-staged firmware: {fw_path}; expected {staged_fw}")
     args = [
-        str(tool_path),
+        f"./{tool_path.name}",
         "-b",
         str(baud),
         "-p",
         burn_port,
         "-f",
-        str(fw_path),
+        "app.bin",
         "-m",
         "-d",
         "-a",
@@ -1141,7 +1293,7 @@ def invoke_burn_tool(tool_path: Path, fw_path: Path, burn_port: str, baud: int, 
     ]
     write_burn_log(log_file, "Run burn tool: " + " ".join(args))
     completed = subprocess.run(
-        ["sudo"] + args,
+        args,
         cwd=str(BURN_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1314,9 +1466,24 @@ def run_burn(args: argparse.Namespace) -> int:
         for attempt in range(1, args.max_retry + 1):
             try:
                 write_burn_log(log_file, f"Burn attempt {attempt}/{args.max_retry}")
-                enter_burn_mode(args.ctrl_port, args.ctrl_baud, args.cmd_delay_ms, args.burn_mode_wait_ms, log_file)
+                enter_burn_mode(
+                    args.ctrl_port,
+                    args.ctrl_baud,
+                    args.burn_port,
+                    args.cmd_delay_ms,
+                    args.burn_mode_wait_ms,
+                    log_file,
+                    pre_burn_reboot=args.pre_burn_reboot,
+                )
                 invoke_burn_tool(tool_path, fw_path, args.burn_port, args.baud, log_file)
-                exit_burn_mode(args.ctrl_port, args.ctrl_baud, args.cmd_delay_ms, args.boot_wait_seconds, log_file)
+                exit_burn_mode(
+                    args.ctrl_port,
+                    args.ctrl_baud,
+                    args.burn_port,
+                    args.cmd_delay_ms,
+                    args.boot_wait_seconds,
+                    log_file,
+                )
                 set_device_loglevel(runtime_log_port, runtime_log_baud, args.skip_loglevel, log_file)
 
                 # ========== 版本号校验（接在 set_device_loglevel 后）==========
@@ -1340,7 +1507,14 @@ def run_burn(args: argparse.Namespace) -> int:
                     raise
                 write_burn_log(log_file, "Retry after power restore")
                 try:
-                    exit_burn_mode(args.ctrl_port, args.ctrl_baud, args.cmd_delay_ms, args.boot_wait_seconds, log_file)
+                    exit_burn_mode(
+                        args.ctrl_port,
+                        args.ctrl_baud,
+                        args.burn_port,
+                        args.cmd_delay_ms,
+                        args.boot_wait_seconds,
+                        log_file,
+                    )
                 except Exception as restore_exc:
                     write_burn_log(log_file, f"Power restore also failed: {restore_exc}")
                 time.sleep(2)
@@ -2089,6 +2263,7 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("--max-retry", type=int, default=3)
     burn.add_argument("--cmd-delay-ms", type=int, default=300)
     burn.add_argument("--burn-mode-wait-ms", type=int, default=2000)
+    burn.add_argument("--pre-burn-reboot", action="store_true", help="Send reboot on ctrl port before the 4-step burn entry flow")
     burn.add_argument("--boot-wait-seconds", type=int, default=5)
     burn.add_argument("--skip-loglevel", action="store_true")
     burn.add_argument("--keep-extracted", action="store_true")

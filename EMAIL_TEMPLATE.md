@@ -90,7 +90,7 @@
 
 ### 3. 包级验证矩阵区
 
-**列**：变体 | 状态 | 关键配置 | 配置断言 | 设备验证 | 异常摘要
+**列**：变体 | 状态 | 关键配置 | 配置断言 | 设备验证 | 异常摘要/未测说明
 
 | 字段 | 来源 |
 |------|------|
@@ -99,7 +99,12 @@
 | 关键配置 | `resolvedOverrides` 或 `overrides` |
 | 配置断言 | `variants[*].configResult` |
 | 设备验证 | `variants[*].deviceResult` |
-| 异常摘要 | 对应 `pkg-*_testResult.xlsx` / `pkg-*_config_suite_config_assert_result.csv` 中的失败项摘要 |
+| 异常摘要/未测说明 | 对应 `pkg-*_testResult.xlsx` / `pkg-*_config_suite_config_assert_result.csv` 中的失败项摘要；如存在裁剪用例，必须写明未测范围和原因 |
+
+要求：
+- 裁剪项不是失败，但必须在邮件正文直接可见，不能只放在附件
+- `pkg-02-left-boundary` 若 `timeout=1s`，必须说明普通命令词/全功能用例未在该包执行，左边界包只验证边界配置、超时、唤醒、播报和串口观察项
+- 不允许把有用例裁剪的包笼统写成“全功能通过”
 
 ### 4. 控制变量诊断区
 

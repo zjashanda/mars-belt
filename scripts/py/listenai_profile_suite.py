@@ -586,16 +586,22 @@ VOICE_REG_DEFAULT_LEARNED_WAKEWORD = "工藤新一"
 VOICE_REG_VIRTUAL_WAKE_INTENT = "虚拟语音注册唤醒意图"
 VOICE_REG_COMMAND_SUCCESS_ALIAS = "笑逐颜开"
 VOICE_REG_COMMAND_RECOVER_ALIAS = "心想事成"
-VOICE_REG_COMMAND_RECOVER_MISMATCH = "小阳小阳"
 VOICE_REG_COMMAND_FAIL_ALIAS = "万事大吉"
-VOICE_REG_COMMAND_FAIL_MISMATCHES = ["小阳小阳", "小孩小孩"]
+VOICE_REG_COMMAND_INVALID_LENGTH_PHRASES = [
+    "春夏秋冬东西南北平安喜乐",
+    "东南西北春夏秋冬平安顺遂",
+    "日月星辰山川湖海平安喜乐",
+]
 VOICE_REG_COMMAND_DELETE_ALIAS = "一帆风顺"
 VOICE_REG_COMMAND_DELETE_KEEP_ALIAS = "一生平安"
 VOICE_REG_WAKE_SUCCESS_ALIAS = "晴空万里"
 VOICE_REG_WAKE_RECOVER_ALIAS = "小树小树"
-VOICE_REG_WAKE_RECOVER_MISMATCH = "小阳小阳"
 VOICE_REG_WAKE_FAIL_ALIAS = "小熊维尼"
-VOICE_REG_WAKE_FAIL_MISMATCHES = ["小阳小阳", "小孩小孩"]
+VOICE_REG_WAKE_INVALID_LENGTH_PHRASES = [
+    "春夏秋冬平安喜乐",
+    "东南西北天天开心",
+    "日月星辰平安顺遂",
+]
 VOICE_REG_WAKE_DELETE_ALIAS = "你好在吗"
 VOICE_REG_WAKE_DELETE_KEEP_ALIAS = "小猫队长"
 VOICE_REG_FORBIDDEN_COMMAND = "增大音量"
@@ -624,6 +630,90 @@ def runtime_assert_text(values: Dict[str, Any]) -> str:
     return ";".join(parts)
 
 
+def _voice_reg_default_wakeup_word(web_config: Dict[str, Any]) -> str:
+    ver = first_version(web_config)
+    for item in ver.get("asr_wakeup") or []:
+        if not isinstance(item, dict):
+            continue
+        word = str(item.get("intent") or item.get("condition") or item.get("word") or "").strip()
+        if word:
+            return word
+    return VOICE_REG_FORBIDDEN_WAKEWORD
+
+
+def _voice_reg_supported_command_intents(web_config: Dict[str, Any], *, include_control: bool) -> List[str]:
+    ver = first_version(web_config)
+    result: List[str] = []
+    for item in ver.get("asr_cmds") or []:
+        if not isinstance(item, dict):
+            continue
+        intent = str(item.get("intent") or item.get("condition") or "").strip()
+        if not intent:
+            continue
+        item_type = str(item.get("type") or "").strip()
+        if "负性词" in item_type:
+            continue
+        special_type = str(item.get("special_type") or item.get("specialType") or "").strip()
+        is_control = "语音注册控制相关" in special_type or "虚拟语音注册唤醒意图" in special_type
+        if not include_control and is_control:
+            continue
+        if intent not in result:
+            result.append(intent)
+    return result
+
+
+def _voice_reg_supported_control_intents(web_config: Dict[str, Any]) -> List[str]:
+    ver = first_version(web_config)
+    result: List[str] = []
+    for item in ver.get("asr_cmds") or []:
+        if not isinstance(item, dict):
+            continue
+        intent = str(item.get("intent") or item.get("condition") or "").strip()
+        if not intent:
+            continue
+        special_type = str(item.get("special_type") or item.get("specialType") or "").strip()
+        if "语音注册控制相关" not in special_type and "虚拟语音注册唤醒意图" not in special_type:
+            continue
+        if intent not in result:
+            result.append(intent)
+    return result
+
+
+def _voice_reg_pick_supported_words(
+    preferred: Sequence[str],
+    supported: Sequence[str],
+    *,
+    limit: int,
+) -> List[str]:
+    result: List[str] = []
+    seen = set()
+    supported_list = [str(item or "").strip() for item in supported if str(item or "").strip()]
+    for word in preferred:
+        text = str(word or "").strip()
+        if text and text in supported_list and text not in seen:
+            result.append(text)
+            seen.add(text)
+        if len(result) >= limit:
+            return result
+    for word in supported_list:
+        if word not in seen:
+            result.append(word)
+            seen.add(word)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _voice_reg_pick_supported_word(
+    preferred: Sequence[str],
+    supported: Sequence[str],
+    *,
+    fallback: str,
+) -> str:
+    items = _voice_reg_pick_supported_words(preferred, supported, limit=1)
+    return items[0] if items else fallback
+
+
 def _voice_reg_case_pack_args(metadata: Dict[str, Any], web_config: Dict[str, Any]) -> Dict[str, Any]:
     learn_words = list(metadata.get("learnWords") or [])
     applied = dict(metadata.get("appliedOverrides") or {})
@@ -642,8 +732,30 @@ def _voice_reg_case_pack_args(metadata: Dict[str, Any], web_config: Dict[str, An
     command_retry_count = int(release_regist.get("commandRetryCount") or user_cfg.get("asr_study_retry_count") or 2)
     wakeup_repeat_count = int(release_regist.get("wakeupRepeatCount") or user_cfg.get("wakeup_study_repeat_count") or 1)
     wakeup_retry_count = int(release_regist.get("wakeupRetryCount") or user_cfg.get("wakeup_study_retry_count") or 0)
+    regist_mode = str(release_regist.get("registMode") or "specificLearn").strip() or "specificLearn"
     selected_command = str(learn_words[0] if learn_words else "").strip()
     learned_wake_word = str(reg_wakewords[0].get("word") if reg_wakewords else VOICE_REG_VIRTUAL_WAKE_INTENT).strip()
+    default_wake_word = _voice_reg_default_wakeup_word(web_config)
+    supported_commands = _voice_reg_supported_command_intents(web_config, include_control=False)
+    supported_control_words = _voice_reg_supported_control_intents(web_config)
+    forbidden_command = ""
+    for word in [VOICE_REG_FORBIDDEN_COMMAND, *supported_commands]:
+        text = str(word or "").strip()
+        if text and text != selected_command:
+            forbidden_command = text
+            break
+    if not forbidden_command:
+        forbidden_command = selected_command
+    command_reserved_phrases = _voice_reg_pick_supported_words(
+        VOICE_REG_COMMAND_RESERVED_PHRASES,
+        supported_control_words,
+        limit=len(VOICE_REG_COMMAND_RESERVED_PHRASES),
+    ) or list(VOICE_REG_COMMAND_RESERVED_PHRASES)
+    wake_reserved_phrases = _voice_reg_pick_supported_words(
+        VOICE_REG_WAKE_RESERVED_PHRASES,
+        supported_control_words,
+        limit=len(VOICE_REG_WAKE_RESERVED_PHRASES),
+    ) or list(VOICE_REG_WAKE_RESERVED_PHRASES)
 
     pack_args: Dict[str, Any] = {
         "voiceRegEnable": True,
@@ -651,9 +763,49 @@ def _voice_reg_case_pack_args(metadata: Dict[str, Any], web_config: Dict[str, An
         "voiceRegCommandRetryCount": command_retry_count,
         "voiceRegWakeupRepeatCount": wakeup_repeat_count,
         "voiceRegWakeupRetryCount": wakeup_retry_count,
+        "voiceRegRegistMode": regist_mode,
         "voiceRegLearnCommandAlias": VOICE_REG_DEFAULT_LEARNED_COMMAND,
         "voiceRegLearnWakeWord": VOICE_REG_DEFAULT_LEARNED_WAKEWORD,
         "voiceRegVirtualWakeIntent": learned_wake_word or VOICE_REG_VIRTUAL_WAKE_INTENT,
+        "voiceRegForbiddenCommand": forbidden_command,
+        "voiceRegDefaultWakeWord": default_wake_word,
+        "voiceRegCommandReservedPhrases": command_reserved_phrases,
+        "voiceRegWakeReservedPhrases": wake_reserved_phrases,
+        "voiceRegLearnCommandEntry": _voice_reg_pick_supported_word(
+            ["学习命令词"],
+            supported_control_words,
+            fallback="学习命令词",
+        ),
+        "voiceRegLearnWakeEntry": _voice_reg_pick_supported_word(
+            ["学习唤醒词"],
+            supported_control_words,
+            fallback="学习唤醒词",
+        ),
+        "voiceRegDeleteCommandEntry": _voice_reg_pick_supported_word(
+            ["删除命令词"],
+            supported_control_words,
+            fallback="删除命令词",
+        ),
+        "voiceRegDeleteWakeEntry": _voice_reg_pick_supported_word(
+            ["删除唤醒词"],
+            supported_control_words,
+            fallback="删除唤醒词",
+        ),
+        "voiceRegDeleteAllCommandEntry": _voice_reg_pick_supported_word(
+            ["删除全部命令词", "全部删除"],
+            supported_control_words,
+            fallback="删除全部命令词",
+        ),
+        "voiceRegExitLearnEntry": _voice_reg_pick_supported_word(
+            ["退出学习"],
+            supported_control_words,
+            fallback="退出学习",
+        ),
+        "voiceRegExitDeleteEntry": _voice_reg_pick_supported_word(
+            ["退出删除"],
+            supported_control_words,
+            fallback="退出删除",
+        ),
     }
     if learn_words:
         pack_args["studyRegCommands"] = learn_words
@@ -670,6 +822,21 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
     command_retry_count = int(pack_args.get("voiceRegCommandRetryCount", 2) or 2)
     wakeup_repeat_count = int(pack_args.get("voiceRegWakeupRepeatCount", 1) or 1)
     wakeup_retry_count = int(pack_args.get("voiceRegWakeupRetryCount", 0) or 0)
+    forbidden_command = str(pack_args.get("voiceRegForbiddenCommand") or VOICE_REG_FORBIDDEN_COMMAND).strip()
+    default_wake_word = str(pack_args.get("voiceRegDefaultWakeWord") or VOICE_REG_FORBIDDEN_WAKEWORD).strip()
+    command_reserved_phrases = [
+        str(item or "").strip()
+        for item in (pack_args.get("voiceRegCommandReservedPhrases") or VOICE_REG_COMMAND_RESERVED_PHRASES)
+        if str(item or "").strip()
+    ]
+    wake_reserved_phrases = [
+        str(item or "").strip()
+        for item in (pack_args.get("voiceRegWakeReservedPhrases") or VOICE_REG_WAKE_RESERVED_PHRASES)
+        if str(item or "").strip()
+    ]
+    regist_mode = str(pack_args.get("voiceRegRegistMode") or "specificLearn").strip() or "specificLearn"
+    delete_command_phrase = str(pack_args.get("voiceRegDeleteCommandEntry") or "删除命令词").strip() or "删除命令词"
+    delete_wake_phrase = str(pack_args.get("voiceRegDeleteWakeEntry") or "删除唤醒词").strip() or "删除唤醒词"
 
     config_base = ["firmware.study_config.enable eq true"]
     if selected_command:
@@ -701,6 +868,22 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
         merged = dict(pack_args)
         merged.update(overrides)
         return merged
+
+    def cycle_phrases(candidates: Sequence[str], count: int) -> List[str]:
+        items = [str(item or "").strip() for item in candidates if str(item or "").strip()]
+        if not items or count <= 0:
+            return []
+        return [items[idx % len(items)] for idx in range(count)]
+
+    command_retry_supported_mismatches = cycle_phrases([forbidden_command], max(command_retry_count, 1))
+    if not command_retry_supported_mismatches:
+        command_retry_supported_mismatches = [forbidden_command or VOICE_REG_FORBIDDEN_COMMAND]
+    command_retry_recover_mismatch = command_retry_supported_mismatches[0]
+
+    wake_retry_supported_mismatches = cycle_phrases([forbidden_command], max(wakeup_retry_count, 1))
+    if not wake_retry_supported_mismatches:
+        wake_retry_supported_mismatches = [forbidden_command or VOICE_REG_FORBIDDEN_COMMAND]
+    wake_retry_recover_mismatch = wake_retry_supported_mismatches[0]
 
     def command_config_assert(*extra: str) -> str:
         return "；".join(
@@ -754,6 +937,185 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             linkage=linkage,
         )
 
+    command_retry_single_recover_seed = command_retry_recover_mismatch
+    wake_retry_single_recover_seed = wake_retry_recover_mismatch
+
+    command_retry_recover_case_name = "语音注册-命令词失败重试恢复成功"
+    command_retry_recover_scenario = "command_retry_recover"
+    command_retry_recover_verify_should_work = True
+    if command_retry_count <= 1:
+        command_retry_recover_case_name = "语音注册-命令词失败一次即退出"
+        command_retry_recover_scenario = "command_retry_single_fail"
+        command_retry_recover_verify_should_work = False
+        if command_repeat_count <= 1:
+            command_retry_recover_steps = (
+                f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+                f"2. 录入普通功能词 {command_retry_single_recover_seed} 触发首次失配 "
+                f"3. 因失败重试次数=1，当前学习流程应直接退出 "
+                f"4. 再说 {VOICE_REG_COMMAND_RECOVER_ALIAS} 不应触发 {selected_command}，默认命令 {selected_command} 仍应正常"
+            )
+            command_retry_recover_phrases = [command_retry_single_recover_seed]
+        else:
+            command_retry_recover_steps = (
+                f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+                f"2. 前 {command_repeat_count - 1} 遍录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
+                f"3. 第 {command_repeat_count} 遍故意录入普通功能词 {command_retry_single_recover_seed} "
+                f"4. 因失败重试次数=1，当前学习流程应直接退出，不进入恢复重试 "
+                f"5. 再说 {VOICE_REG_COMMAND_RECOVER_ALIAS} 不应触发 {selected_command}，默认命令 {selected_command} 仍应正常"
+            )
+            command_retry_recover_phrases = [VOICE_REG_COMMAND_RECOVER_ALIAS] * max(command_repeat_count - 1, 0) + [
+                command_retry_single_recover_seed
+            ]
+        command_retry_recover_expected = "命令词失败重试次数=1 时，首次失配即终止当前学习流程，学习语料不生效，默认命令保持正常"
+        command_retry_exhaust_steps = (
+            f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+            f"2. 连续录入删除类命令 {cycle_phrases([delete_command_phrase], max(command_retry_count + 1, 1))} "
+            f"直到耗尽失败重试次数 "
+            f"3. 学习失败后确认默认命令 {selected_command} 仍正常，且未产生新的学习映射"
+        )
+        command_retry_exhaust_expected = "单遍学习模式下，连续输入删除类命令耗尽失败计数后学习失败，默认命令保持正常且不会残留新的学习映射"
+        command_retry_exhaust_phrases = cycle_phrases(
+            [delete_command_phrase],
+            max(command_retry_count + 1, 1),
+        )
+        command_retry_exhaust_verify_phrase = ""
+    elif command_repeat_count <= 1:
+        command_retry_recover_steps = (
+            f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+            f"2. 先录入普通功能词 {command_retry_single_recover_seed} 触发失败计数但保持学习态 "
+            f"3. 在重试窗口内录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
+            f"4. 学习成功后验证 {VOICE_REG_COMMAND_RECOVER_ALIAS} 可触发 {selected_command}"
+        )
+        command_retry_recover_expected = "单遍学习模式下，普通功能词先触发失败计数但未直接终止学习，随后在重试窗口补录成功且学习语料生效"
+        command_retry_recover_phrases = [
+            command_retry_single_recover_seed,
+            VOICE_REG_COMMAND_RECOVER_ALIAS,
+        ]
+        command_retry_exhaust_steps = (
+            f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+            f"2. 连续录入删除类命令 {cycle_phrases([delete_command_phrase], max(command_retry_count + 1, 1))} "
+            f"直到耗尽失败重试次数 "
+            f"3. 学习失败后确认默认命令 {selected_command} 仍正常，且未产生新的学习映射"
+        )
+        command_retry_exhaust_expected = "单遍学习模式下，连续输入删除类命令耗尽失败计数后学习失败，默认命令保持正常且不会残留新的学习映射"
+        command_retry_exhaust_phrases = cycle_phrases(
+            [delete_command_phrase],
+            max(command_retry_count + 1, 1),
+        )
+        command_retry_exhaust_verify_phrase = ""
+    else:
+        command_retry_recover_steps = (
+            f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+            f"2. 第一遍录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
+            f"3. 第二遍故意录入普通功能词 {command_retry_recover_mismatch} 后触发重试 "
+            f"4. 在重试窗口内重新录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
+            f"5. 学习成功后验证 {VOICE_REG_COMMAND_RECOVER_ALIAS} 可触发 {selected_command}"
+        )
+        command_retry_recover_expected = "失败重试次数生效，在重试窗口内恢复一致后学习成功，学习语料生效"
+        command_retry_recover_phrases = [
+            VOICE_REG_COMMAND_RECOVER_ALIAS,
+            command_retry_recover_mismatch,
+            VOICE_REG_COMMAND_RECOVER_ALIAS,
+        ]
+        command_retry_exhaust_steps = (
+            f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+            f"2. 第一遍录入 {VOICE_REG_COMMAND_FAIL_ALIAS} "
+            f"3. 后续连续录入删除类命令 {[delete_command_phrase] * max(command_retry_count, 1)} 直到耗尽失败重试次数 "
+            f"4. 学习失败后再说 {VOICE_REG_COMMAND_FAIL_ALIAS} "
+            f"5. 该学习语料不应生效"
+        )
+        command_retry_exhaust_expected = "失败重试次数耗尽后学习失败，失败语料不会生效"
+        command_retry_exhaust_phrases = [VOICE_REG_COMMAND_FAIL_ALIAS] + [delete_command_phrase] * max(command_retry_count, 1)
+        command_retry_exhaust_verify_phrase = VOICE_REG_COMMAND_FAIL_ALIAS
+
+    wake_retry_recover_case_name = "语音注册-唤醒词失败重试恢复成功"
+    wake_retry_recover_scenario = "wakeup_retry_recover"
+    wake_retry_recover_verify_should_work = True
+    if wakeup_retry_count <= 1:
+        wake_retry_recover_case_name = "语音注册-唤醒词失败一次即退出"
+        wake_retry_recover_scenario = "wakeup_retry_single_fail"
+        wake_retry_recover_verify_should_work = False
+        if wakeup_repeat_count <= 1:
+            wake_retry_recover_steps = (
+                f"1. 进入学习唤醒词 "
+                f"2. 录入普通功能词 {wake_retry_single_recover_seed} 触发首次失配 "
+                f"3. 因失败重试次数=1，当前学习流程应直接退出 "
+                f"4. 再说 {VOICE_REG_WAKE_RECOVER_ALIAS} 不应唤醒设备，默认唤醒词仍应正常"
+            )
+            wake_retry_recover_phrases = [wake_retry_single_recover_seed]
+        else:
+            wake_retry_recover_steps = (
+                f"1. 进入学习唤醒词 "
+                f"2. 前 {wakeup_repeat_count - 1} 遍录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
+                f"3. 第 {wakeup_repeat_count} 遍故意录入普通功能词 {wake_retry_single_recover_seed} "
+                f"4. 因失败重试次数=1，当前学习流程应直接退出，不进入恢复重试 "
+                f"5. 再说 {VOICE_REG_WAKE_RECOVER_ALIAS} 不应唤醒设备，默认唤醒词仍应正常"
+            )
+            wake_retry_recover_phrases = [VOICE_REG_WAKE_RECOVER_ALIAS] * max(wakeup_repeat_count - 1, 0) + [
+                wake_retry_single_recover_seed
+            ]
+        wake_retry_recover_expected = "唤醒词失败重试次数=1 时，首次失配即终止当前学习流程，学习唤醒词不生效，默认唤醒保持正常"
+        wake_retry_exhaust_steps = (
+            f"1. 进入学习唤醒词 "
+            f"2. 连续录入删除类命令 {cycle_phrases([delete_wake_phrase], max(wakeup_retry_count + 1, 1))} "
+            f"直到耗尽失败重试次数 "
+            f"3. 学习失败后确认默认唤醒仍正常，且不会残留新的学习唤醒词"
+        )
+        wake_retry_exhaust_expected = "单遍学习模式下，连续输入删除类命令耗尽失败计数后学习失败，默认唤醒保持正常且不会残留新的学习唤醒词"
+        wake_retry_exhaust_phrases = cycle_phrases(
+            [delete_wake_phrase],
+            max(wakeup_retry_count + 1, 1),
+        )
+        wake_retry_exhaust_verify_phrase = ""
+    elif wakeup_repeat_count <= 1:
+        wake_retry_recover_steps = (
+            f"1. 进入学习唤醒词 "
+            f"2. 先录入普通功能词 {wake_retry_single_recover_seed} 触发失败计数但保持学习态 "
+            f"3. 在重试窗口内录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
+            f"4. 学习成功后验证 {VOICE_REG_WAKE_RECOVER_ALIAS} 可正常唤醒"
+        )
+        wake_retry_recover_expected = "单遍学习模式下，普通功能词先触发失败计数但未直接终止学习，随后在重试窗口补录成功且学习唤醒词生效"
+        wake_retry_recover_phrases = [
+            wake_retry_single_recover_seed,
+            VOICE_REG_WAKE_RECOVER_ALIAS,
+        ]
+        wake_retry_exhaust_steps = (
+            f"1. 进入学习唤醒词 "
+            f"2. 连续录入删除类命令 {cycle_phrases([delete_wake_phrase], max(wakeup_retry_count + 1, 1))} "
+            f"直到耗尽失败重试次数 "
+            f"3. 学习失败后确认默认唤醒仍正常，且不会残留新的学习唤醒词"
+        )
+        wake_retry_exhaust_expected = "单遍学习模式下，连续输入删除类命令耗尽失败计数后学习失败，默认唤醒保持正常且不会残留新的学习唤醒词"
+        wake_retry_exhaust_phrases = cycle_phrases(
+            [delete_wake_phrase],
+            max(wakeup_retry_count + 1, 1),
+        )
+        wake_retry_exhaust_verify_phrase = ""
+    else:
+        wake_retry_recover_steps = (
+            f"1. 进入学习唤醒词 "
+            f"2. 第一遍录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
+            f"3. 第二遍故意录入普通功能词 {wake_retry_recover_mismatch} 后触发重试 "
+            f"4. 在重试窗口内重新录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
+            f"5. 学习成功后验证 {VOICE_REG_WAKE_RECOVER_ALIAS} 可正常唤醒"
+        )
+        wake_retry_recover_expected = "唤醒词失败重试次数生效，在重试窗口内恢复一致后学习成功，学习唤醒词生效"
+        wake_retry_recover_phrases = [
+            VOICE_REG_WAKE_RECOVER_ALIAS,
+            wake_retry_recover_mismatch,
+            VOICE_REG_WAKE_RECOVER_ALIAS,
+        ]
+        wake_retry_exhaust_steps = (
+            f"1. 进入学习唤醒词 "
+            f"2. 第一遍录入 {VOICE_REG_WAKE_FAIL_ALIAS} "
+            f"3. 后续连续录入删除类命令 {[delete_wake_phrase] * max(wakeup_retry_count, 1)} 直到耗尽失败重试次数 "
+            f"4. 学习失败后再使用 {VOICE_REG_WAKE_FAIL_ALIAS} 唤醒 "
+            f"5. 该学习唤醒词不应生效"
+        )
+        wake_retry_exhaust_expected = "失败重试次数耗尽后学习失败，失败唤醒语料不会生效"
+        wake_retry_exhaust_phrases = [VOICE_REG_WAKE_FAIL_ALIAS] + [delete_wake_phrase] * max(wakeup_retry_count, 1)
+        wake_retry_exhaust_verify_phrase = VOICE_REG_WAKE_FAIL_ALIAS
+
     rows = [
         voice_case(
             case_id="VOICE-001",
@@ -761,7 +1123,7 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             command="学习命令词",
             steps=(
                 f"1. 确认命令词学习次数={command_repeat_count}、失败重试次数={command_retry_count} "
-                f"2. 进入学习命令词并选择 {selected_command} "
+                f"2. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
                 f"3. 连续录入 {VOICE_REG_COMMAND_SUCCESS_ALIAS} 共 {command_repeat_count} 次 "
                 f"4. 学习成功后，再说 {VOICE_REG_COMMAND_SUCCESS_ALIAS} "
                 f"5. 应触发 {selected_command} 的原始命令逻辑"
@@ -774,6 +1136,7 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 "learnedCommand": VOICE_REG_COMMAND_SUCCESS_ALIAS,
                 "commandRepeatCount": command_repeat_count,
                 "commandRetryCount": command_retry_count,
+                "registMode": regist_mode,
                 "learningPhrases": [VOICE_REG_COMMAND_SUCCESS_ALIAS] * command_repeat_count,
                 "verifyPhrase": VOICE_REG_COMMAND_SUCCESS_ALIAS,
                 "verifyTargetCommand": selected_command,
@@ -801,6 +1164,7 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 "virtualWakeIntent": virtual_wake,
                 "wakeupRepeatCount": wakeup_repeat_count,
                 "wakeupRetryCount": wakeup_retry_count,
+                "registMode": regist_mode,
                 "learningPhrases": [VOICE_REG_WAKE_SUCCESS_ALIAS] * wakeup_repeat_count,
                 "verifyPhrase": VOICE_REG_WAKE_SUCCESS_ALIAS,
                 "verifyExpectedResults": [VOICE_REG_WAKE_SUCCESS_ALIAS, virtual_wake],
@@ -812,65 +1176,47 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
         ),
         voice_case(
             case_id="VOICE-003",
-            module_name="语音注册-命令词失败重试恢复成功",
+            module_name=command_retry_recover_case_name,
             command="学习命令词",
-            steps=(
-                f"1. 进入学习命令词并选择 {selected_command} "
-                f"2. 第一遍录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
-                f"3. 第二遍故意录入非一致语料 {VOICE_REG_COMMAND_RECOVER_MISMATCH} 后触发重试 "
-                f"4. 在重试窗口内重新录入 {VOICE_REG_COMMAND_RECOVER_ALIAS} "
-                f"5. 学习成功后验证 {VOICE_REG_COMMAND_RECOVER_ALIAS} 可触发 {selected_command}"
-            ),
-            expected="失败重试次数生效，在重试窗口内恢复一致后学习成功，学习语料生效",
+            steps=command_retry_recover_steps,
+            expected=command_retry_recover_expected,
             config_assert=command_config_assert(),
             runtime_values={
-                "voiceRegScenario": "command_retry_recover",
+                "voiceRegScenario": command_retry_recover_scenario,
                 "selectedCommand": selected_command,
                 "learnedCommand": VOICE_REG_COMMAND_RECOVER_ALIAS,
                 "commandRepeatCount": command_repeat_count,
                 "commandRetryCount": command_retry_count,
-                "learningPhrases": [
-                    VOICE_REG_COMMAND_RECOVER_ALIAS,
-                    VOICE_REG_COMMAND_RECOVER_MISMATCH,
-                    VOICE_REG_COMMAND_RECOVER_ALIAS,
-                ],
+                "registMode": regist_mode,
+                "learningPhrases": command_retry_recover_phrases,
                 "verifyPhrase": VOICE_REG_COMMAND_RECOVER_ALIAS,
                 "verifyTargetCommand": selected_command,
-                "verifyShouldWork": True,
+                "verifyShouldWork": command_retry_recover_verify_should_work,
             },
-            input_value="command_retry_recover",
+            input_value=command_retry_recover_scenario,
             linkage="参考 Excel: 语音注册测试_121",
             pack_overrides={"voiceRegLearnCommandAlias": VOICE_REG_COMMAND_RECOVER_ALIAS},
         ),
         voice_case(
             case_id="VOICE-004",
-            module_name="语音注册-唤醒词失败重试恢复成功",
+            module_name=wake_retry_recover_case_name,
             command="学习唤醒词",
-            steps=(
-                f"1. 进入学习唤醒词 "
-                f"2. 第一遍录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
-                f"3. 第二遍故意录入非一致语料 {VOICE_REG_WAKE_RECOVER_MISMATCH} 后触发重试 "
-                f"4. 在重试窗口内重新录入 {VOICE_REG_WAKE_RECOVER_ALIAS} "
-                f"5. 学习成功后验证 {VOICE_REG_WAKE_RECOVER_ALIAS} 可正常唤醒"
-            ),
-            expected="唤醒词失败重试次数生效，在重试窗口内恢复一致后学习成功，学习唤醒词生效",
+            steps=wake_retry_recover_steps,
+            expected=wake_retry_recover_expected,
             config_assert=wake_config_assert(),
             runtime_values={
-                "voiceRegScenario": "wakeup_retry_recover",
+                "voiceRegScenario": wake_retry_recover_scenario,
                 "learnedWakeWord": VOICE_REG_WAKE_RECOVER_ALIAS,
                 "virtualWakeIntent": virtual_wake,
                 "wakeupRepeatCount": wakeup_repeat_count,
                 "wakeupRetryCount": wakeup_retry_count,
-                "learningPhrases": [
-                    VOICE_REG_WAKE_RECOVER_ALIAS,
-                    VOICE_REG_WAKE_RECOVER_MISMATCH,
-                    VOICE_REG_WAKE_RECOVER_ALIAS,
-                ],
+                "registMode": regist_mode,
+                "learningPhrases": wake_retry_recover_phrases,
                 "verifyPhrase": VOICE_REG_WAKE_RECOVER_ALIAS,
                 "verifyExpectedResults": [VOICE_REG_WAKE_RECOVER_ALIAS, virtual_wake],
-                "verifyShouldWork": True,
+                "verifyShouldWork": wake_retry_recover_verify_should_work,
             },
-            input_value="wakeup_retry_recover",
+            input_value=wake_retry_recover_scenario,
             linkage="参考 Excel: 语音注册测试_11",
             pack_overrides={"voiceRegLearnWakeWord": VOICE_REG_WAKE_RECOVER_ALIAS},
         ),
@@ -878,14 +1224,8 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             case_id="VOICE-005",
             module_name="语音注册-命令词失败重试耗尽",
             command="学习命令词",
-            steps=(
-                f"1. 进入学习命令词并选择 {selected_command} "
-                f"2. 第一遍录入 {VOICE_REG_COMMAND_FAIL_ALIAS} "
-                f"3. 后续连续录入不一致语料 {VOICE_REG_COMMAND_FAIL_MISMATCHES} 直到耗尽失败重试次数 "
-                f"4. 学习失败后再说 {VOICE_REG_COMMAND_FAIL_ALIAS} "
-                f"5. 该学习语料不应生效"
-            ),
-            expected="失败重试次数耗尽后学习失败，失败语料不会生效",
+            steps=command_retry_exhaust_steps,
+            expected=command_retry_exhaust_expected,
             config_assert=command_config_assert(),
             runtime_values={
                 "voiceRegScenario": "command_retry_exhaust",
@@ -893,8 +1233,9 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 "learnedCommand": VOICE_REG_COMMAND_FAIL_ALIAS,
                 "commandRepeatCount": command_repeat_count,
                 "commandRetryCount": command_retry_count,
-                "learningPhrases": [VOICE_REG_COMMAND_FAIL_ALIAS] + VOICE_REG_COMMAND_FAIL_MISMATCHES,
-                "verifyPhrase": VOICE_REG_COMMAND_FAIL_ALIAS,
+                "registMode": regist_mode,
+                "learningPhrases": command_retry_exhaust_phrases,
+                "verifyPhrase": command_retry_exhaust_verify_phrase,
                 "verifyTargetCommand": selected_command,
                 "verifyShouldWork": False,
             },
@@ -906,14 +1247,8 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             case_id="VOICE-006",
             module_name="语音注册-唤醒词失败重试耗尽",
             command="学习唤醒词",
-            steps=(
-                f"1. 进入学习唤醒词 "
-                f"2. 第一遍录入 {VOICE_REG_WAKE_FAIL_ALIAS} "
-                f"3. 后续连续录入不一致语料 {VOICE_REG_WAKE_FAIL_MISMATCHES} 直到耗尽失败重试次数 "
-                f"4. 学习失败后再使用 {VOICE_REG_WAKE_FAIL_ALIAS} 唤醒 "
-                f"5. 该学习唤醒词不应生效"
-            ),
-            expected="失败重试次数耗尽后学习失败，失败唤醒语料不会生效",
+            steps=wake_retry_exhaust_steps,
+            expected=wake_retry_exhaust_expected,
             config_assert=wake_config_assert(),
             runtime_values={
                 "voiceRegScenario": "wakeup_retry_exhaust",
@@ -921,8 +1256,9 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 "virtualWakeIntent": virtual_wake,
                 "wakeupRepeatCount": wakeup_repeat_count,
                 "wakeupRetryCount": wakeup_retry_count,
-                "learningPhrases": [VOICE_REG_WAKE_FAIL_ALIAS] + VOICE_REG_WAKE_FAIL_MISMATCHES,
-                "verifyPhrase": VOICE_REG_WAKE_FAIL_ALIAS,
+                "registMode": regist_mode,
+                "learningPhrases": wake_retry_exhaust_phrases,
+                "verifyPhrase": wake_retry_exhaust_verify_phrase,
                 "verifyExpectedResults": [VOICE_REG_WAKE_FAIL_ALIAS, virtual_wake],
                 "verifyShouldWork": False,
             },
@@ -935,22 +1271,22 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             module_name="语音注册-命令词功能词冲突",
             command="学习命令词",
             steps=(
-                f"1. 进入学习命令词并选择 {selected_command} "
-                f"2. 在学习阶段连续录入已支持功能命令词 {VOICE_REG_FORBIDDEN_COMMAND} "
+                f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+                f"2. 在学习阶段连续录入已支持功能命令词 {forbidden_command} "
                 f"3. 观察设备拒绝学习并退出 "
-                f"4. 再说 {VOICE_REG_FORBIDDEN_COMMAND}，应仍执行其原始功能而不是映射到 {selected_command}"
+                f"4. 再说 {forbidden_command}，应仍执行其原始功能而不是映射到 {selected_command}"
             ),
             expected="已支持功能命令词不能作为学习语料，学习失败且原始命令逻辑不被篡改",
             config_assert=command_config_assert(),
             runtime_values={
                 "voiceRegScenario": "command_supported_conflict",
                 "selectedCommand": selected_command,
-                "forbiddenCommand": VOICE_REG_FORBIDDEN_COMMAND,
+                "forbiddenCommand": forbidden_command,
                 "commandRepeatCount": command_repeat_count,
                 "commandRetryCount": command_retry_count,
-                "learningPhrases": [VOICE_REG_FORBIDDEN_COMMAND] * max(command_retry_count + 1, 1),
-                "verifyPhrase": VOICE_REG_FORBIDDEN_COMMAND,
-                "verifyTargetCommand": VOICE_REG_FORBIDDEN_COMMAND,
+                "learningPhrases": [forbidden_command] * max(command_retry_count + 1, 1),
+                "verifyPhrase": forbidden_command,
+                "verifyTargetCommand": forbidden_command,
                 "verifyShouldWork": True,
             },
             input_value="command_supported_conflict",
@@ -962,21 +1298,21 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             command="学习唤醒词",
             steps=(
                 f"1. 进入学习唤醒词 "
-                f"2. 在学习阶段连续录入默认唤醒词 {VOICE_REG_FORBIDDEN_WAKEWORD} "
+                f"2. 在学习阶段连续录入默认唤醒词 {default_wake_word} "
                 f"3. 观察设备拒绝学习并退出 "
-                f"4. 默认唤醒词 {VOICE_REG_FORBIDDEN_WAKEWORD} 仍只按原始唤醒逻辑生效"
+                f"4. 默认唤醒词 {default_wake_word} 仍只按原始唤醒逻辑生效"
             ),
             expected="默认唤醒词不能作为学习语料，学习失败且默认唤醒逻辑保持正常",
             config_assert=wake_config_assert(),
             runtime_values={
                 "voiceRegScenario": "wakeup_default_conflict",
-                "defaultWakeWord": VOICE_REG_FORBIDDEN_WAKEWORD,
+                "defaultWakeWord": default_wake_word,
                 "virtualWakeIntent": virtual_wake,
                 "wakeupRepeatCount": wakeup_repeat_count,
                 "wakeupRetryCount": wakeup_retry_count,
-                "learningPhrases": [VOICE_REG_FORBIDDEN_WAKEWORD] * max(wakeup_retry_count + 1, 1),
-                "verifyPhrase": VOICE_REG_FORBIDDEN_WAKEWORD,
-                "verifyExpectedResults": [VOICE_REG_FORBIDDEN_WAKEWORD],
+                "learningPhrases": [default_wake_word] * max(wakeup_retry_count + 1, 1),
+                "verifyPhrase": default_wake_word,
+                "verifyExpectedResults": [default_wake_word],
                 "verifyShouldWork": True,
             },
             input_value="wakeup_default_conflict",
@@ -987,8 +1323,8 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             module_name="语音注册-命令词保留提示词冲突",
             command="学习命令词",
             steps=(
-                f"1. 进入学习命令词并选择 {selected_command} "
-                f"2. 在学习阶段依次录入保留控制词 {VOICE_REG_COMMAND_RESERVED_PHRASES} "
+                f"1. 进入学习命令词；若当前固件要求选目标命令，则选择 {selected_command} "
+                f"2. 在学习阶段依次录入保留控制词 {command_reserved_phrases} "
                 f"3. 观察设备提示该指令不支持学习/冲突并最终退出 "
                 f"4. 默认命令词 {selected_command} 仍保持正常"
             ),
@@ -999,7 +1335,7 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 "selectedCommand": selected_command,
                 "commandRepeatCount": command_repeat_count,
                 "commandRetryCount": command_retry_count,
-                "learningPhrases": VOICE_REG_COMMAND_RESERVED_PHRASES,
+                "learningPhrases": command_reserved_phrases,
                 "verifyPhrase": selected_command,
                 "verifyTargetCommand": selected_command,
                 "verifyShouldWork": True,
@@ -1013,21 +1349,21 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
             command="学习唤醒词",
             steps=(
                 "1. 进入学习唤醒词 "
-                f"2. 在学习阶段依次录入保留控制词 {VOICE_REG_WAKE_RESERVED_PHRASES} "
+                f"2. 在学习阶段依次录入保留控制词 {wake_reserved_phrases} "
                 f"3. 观察设备提示冲突并最终退出 "
-                f"4. 默认唤醒词 {VOICE_REG_FORBIDDEN_WAKEWORD} 仍保持正常"
+                f"4. 默认唤醒词 {default_wake_word} 仍保持正常"
             ),
             expected="学习/删除/退出类保留词不能作为唤醒词学习语料，学习失败且默认唤醒保持正常",
             config_assert=wake_config_assert(),
             runtime_values={
                 "voiceRegScenario": "wakeup_reserved_conflict",
-                "defaultWakeWord": VOICE_REG_FORBIDDEN_WAKEWORD,
+                "defaultWakeWord": default_wake_word,
                 "virtualWakeIntent": virtual_wake,
                 "wakeupRepeatCount": wakeup_repeat_count,
                 "wakeupRetryCount": wakeup_retry_count,
-                "learningPhrases": VOICE_REG_WAKE_RESERVED_PHRASES,
-                "verifyPhrase": VOICE_REG_FORBIDDEN_WAKEWORD,
-                "verifyExpectedResults": [VOICE_REG_FORBIDDEN_WAKEWORD],
+                "learningPhrases": wake_reserved_phrases,
+                "verifyPhrase": default_wake_word,
+                "verifyExpectedResults": [default_wake_word],
                 "verifyShouldWork": True,
             },
             input_value="wakeup_reserved_conflict",
@@ -1092,7 +1428,7 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
                 f"1. 先学习自定义唤醒词 {VOICE_REG_WAKE_DELETE_ALIAS} "
                 f"2. 进入删除唤醒词流程并完成删除 "
                 f"3. 删除后再使用 {VOICE_REG_WAKE_DELETE_ALIAS} 应无法唤醒 "
-                f"4. 默认唤醒词 {VOICE_REG_FORBIDDEN_WAKEWORD} 仍可正常唤醒"
+                f"4. 默认唤醒词 {default_wake_word} 仍可正常唤醒"
             ),
             expected="删除唤醒词成功后仅移除学习唤醒词，不影响默认唤醒",
             config_assert=wake_config_assert("_ver_list[0].asr_cmds[*].intent contains 删除唤醒词"),

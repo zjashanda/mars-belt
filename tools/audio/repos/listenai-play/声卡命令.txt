@@ -1,0 +1,24 @@
+1、adc增益设置
+adc-gains.set 36 0 36 0 12 0 12 0
+MIC0_a_gain,MIC0_d_gain,MIC1_a_gain,MIC1_d_gain,MIC2_a_gain,MIC2_d_gain,MIC3_a_gain,MIC3_d_gain
+
+2、adc增益查看
+adc-gains.show
+
+
+3、dac增益设置
+dac-gains.set 12 0 12 0
+DACL_a_gain,DACL_d_gain,DACR_a_gain,DACR_d_gain
+4、dac增益查看
+dac-gains.show
+
+5、引脚设置
+pa-enable.set 1 2 0 1
+pa-enable.set 0 17 0 1 设置音频常开
+参数1（0,1）：端口  0->GPIOA口，1->GPIOB口
+参数2（0~31）：bit位  0->bit0,3->bit3
+参数3（0~20）：function，功能选择
+参数4（0,1）：0->低电平，1->高电平
+
+6、引脚输入查看
+pa-enable.show
