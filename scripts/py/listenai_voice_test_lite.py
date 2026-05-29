@@ -6,6 +6,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import zipfile
@@ -1191,6 +1192,7 @@ def build_device_runner(base_module):
             ready_timeout_seconds: float,
             allow_reg_result: bool = False,
             accepted_results: Optional[Sequence[str]] = None,
+            wait_prompt_finished: bool = True,
         ) -> Tuple[bool, str]:
             if not self._ensure_audio_word(phrase):
                 detail = f"缺少音频且 TTS 生成失败: {phrase}"
@@ -1213,43 +1215,84 @@ def build_device_runner(base_module):
                     self.reader.clear_reboot_flag()
                 self.reader.clear()
                 self._clear_recent_serial_lines()
-                self.play(phrase)
+                fast_proc = self._start_fast_play(phrase) if not wait_prompt_finished else None
+                if fast_proc is None:
+                    self.play(phrase)
                 observed: List[str] = []
                 deadline = time.time() + max(float(detect_timeout_seconds), 1.0)
-                while time.time() < deadline:
-                    for tag in ("wakeKw", "asrKw"):
-                        raw = self.reader.get(tag)
-                        if not raw:
-                            continue
-                        text = self.pinyin_to_zh(raw) or raw
-                        if text and text not in observed:
-                            observed.append(text)
-                    if (set(observed) & accepted) or (allow_reg_result and "REG" in observed):
-                        rebooted, reboot_detail = self._unexpected_reboot_since(attempt_reboot_base)
-                        if rebooted:
-                            self._set_last_wakeup_state("reboot", reboot_detail)
-                            return False, reboot_detail
-                        ready_ok, ready_detail = self._wait_for_wakeup_command_ready(
-                            since_index=0,
-                            timeout_seconds=max(float(ready_timeout_seconds), 0.5),
-                        )
-                        last_detail = (
-                            f"wake={phrase} accepted={sorted(accepted)} "
-                            f"observed={observed}; {ready_detail}"
-                        )
-                        if ready_ok:
-                            self._set_last_wakeup_state("ready", last_detail)
-                            self.log.info("  唤醒成功")
-                            return True, last_detail
-                        status = self._classify_wakeup_ready_failure(ready_detail)
-                        self._set_last_wakeup_state(status, last_detail)
-                        self.log.warn(f"  唤醒后命令窗口未就绪: {last_detail}")
-                        if status == "command-window-expired":
-                            return False, last_detail
-                        if status == "wake-rejected":
+                try:
+                    while time.time() < deadline:
+                        for tag in ("wakeKw", "asrKw"):
+                            raw = self.reader.get(tag)
+                            if not raw:
+                                continue
+                            text = self.pinyin_to_zh(raw) or raw
+                            if text and text not in observed:
+                                observed.append(text)
+                        if (set(observed) & accepted) or (allow_reg_result and "REG" in observed):
+                            rebooted, reboot_detail = self._unexpected_reboot_since(attempt_reboot_base)
+                            if rebooted:
+                                self._stop_fast_play(fast_proc)
+                                fast_proc = None
+                                self._set_last_wakeup_state("reboot", reboot_detail)
+                                return False, reboot_detail
+                            if not wait_prompt_finished:
+                                if fast_proc is not None:
+                                    try:
+                                        fast_proc.wait(timeout=0.8)
+                                    except subprocess.TimeoutExpired:
+                                        self._stop_fast_play(fast_proc)
+                                    fast_proc = None
+                                try:
+                                    command_gap = float(os.environ.get("MARS_BELT_WAKE_COMMAND_GAP_SECONDS", "0.45"))
+                                except Exception:
+                                    command_gap = 0.45
+                                pending_command = str(getattr(self, "_pending_command_for_wakeup", "") or "").strip()
+                                overrides = str(os.environ.get("MARS_BELT_WAKE_COMMAND_GAP_OVERRIDES", "") or "")
+                                for item in [part.strip() for part in overrides.split(",") if part.strip()]:
+                                    if "=" not in item:
+                                        continue
+                                    key, value = item.split("=", 1)
+                                    if key.strip() == pending_command:
+                                        try:
+                                            command_gap = float(value.strip())
+                                        except Exception:
+                                            pass
+                                        break
+                                if command_gap > 0:
+                                    time.sleep(command_gap)
+                                last_detail = (
+                                    f"wake={phrase} accepted={sorted(accepted)} "
+                                    f"observed={observed}; fast-command-window command={pending_command} gap={command_gap:.2f}s"
+                                )
+                                self._set_last_wakeup_state("ready", last_detail)
+                                self.log.info("  唤醒成功")
+                                return True, last_detail
+                            self._stop_fast_play(fast_proc)
+                            fast_proc = None
+                            ready_ok, ready_detail = self._wait_for_wakeup_command_ready(
+                                since_index=0,
+                                timeout_seconds=max(float(ready_timeout_seconds), 0.5),
+                            )
+                            last_detail = (
+                                f"wake={phrase} accepted={sorted(accepted)} "
+                                f"observed={observed}; {ready_detail}"
+                            )
+                            if ready_ok:
+                                self._set_last_wakeup_state("ready", last_detail)
+                                self.log.info("  唤醒成功")
+                                return True, last_detail
+                            status = self._classify_wakeup_ready_failure(ready_detail)
+                            self._set_last_wakeup_state(status, last_detail)
+                            self.log.warn(f"  唤醒后命令窗口未就绪: {last_detail}")
+                            if status == "command-window-expired":
+                                return False, last_detail
+                            if status == "wake-rejected":
+                                break
                             break
-                        break
-                    time.sleep(0.05)
+                        time.sleep(0.05)
+                finally:
+                    self._stop_fast_play(fast_proc)
                 rebooted, reboot_detail = self._unexpected_reboot_since(attempt_reboot_base)
                 if rebooted:
                     self._set_last_wakeup_state("reboot", reboot_detail)
@@ -1269,6 +1312,7 @@ def build_device_runner(base_module):
                 detect_timeout_seconds=3.0,
                 ready_timeout_seconds=4.5,
                 allow_reg_result=False,
+                wait_prompt_finished=False,
             )
             if ok:
                 return True
@@ -3603,6 +3647,7 @@ def build_device_runner(base_module):
                 detect_timeout_seconds=timeout_seconds,
                 ready_timeout_seconds=max(float(timeout_seconds), 4.5),
                 allow_reg_result=False,
+                wait_prompt_finished=False,
             )
 
         def _run_command_step_with_named_wakeup(

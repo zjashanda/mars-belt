@@ -23,7 +23,7 @@
 | 固件版本 | summary.json → finalReleaseSubset.version | V-2026.03.31_15.07.47 |
 | 语言 | summary.json → selected.language | 中文 |
 | 测试时间 | 从 validate 执行日志目录名解析 | 2026-03-31 15:13 |
-| 串口配置 | 固定值 | /dev/ttyACM4 + /dev/ttyACM0 |
+| 串口配置 | 固定值 | ctrl=/dev/ttyACM4 log=/dev/ttyACM1 protocol=/dev/ttyACM2 burn=/dev/ttyACM1 |
 
 ### 2. 固件配置参数表
 

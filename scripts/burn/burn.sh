@@ -7,7 +7,8 @@ set -e
 #################################
 
 CTRL_PORT="/dev/ttyACM4"
-BURN_PORT="/dev/ttyACM0"
+BURN_PORT="/dev/ttyACM1"
+LOG_PORT="/dev/ttyACM1"
 
 BURN_TOOL="./Uart_Burn_Tool"
 FW_FILE="app.bin"
@@ -185,7 +186,7 @@ set_loglevel()
 	sleep 5
     log "设置 loglevel 4"
 
-    printf "loglevel 4\r\n" > "$BURN_PORT"
+    printf "loglevel 4\r\n" > "$LOG_PORT"
 
     sleep 1
 }

@@ -17,7 +17,7 @@ import re, serial, time, sys, subprocess, threading
 from pathlib import Path
 from typing import List, Tuple
 
-PORT = "/dev/ttyACM0"
+PORT = "/dev/ttyACM1"
 BAUD = 115200
 WAV_DIR = Path(__file__).parent / "wavSource"
 MAX_STABLE = 2

@@ -5,7 +5,7 @@ probe_volume_levels.py
 音量档位独立探测脚本（稳定性判断法）
 
 用法:
-  python probe_volume_levels.py --port /dev/ttyACM0
+  python probe_volume_levels.py --port /dev/ttyACM1
 
 前置条件:
   - 设备已烧录固件且正常运行
@@ -38,7 +38,7 @@ MAX_STABLE = 2
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="音量档位探测脚本（稳定性判断法）")
-    parser.add_argument("--port", default="/dev/ttyACM0", help="日志串口")
+    parser.add_argument("--port", default="/dev/ttyACM1", help="日志串口")
     parser.add_argument("--ctrl-port", default="/dev/ttyACM4", help="控制串口")
     parser.add_argument("--baud", type=int, default=115200, help="波特率")
     parser.add_argument("--wav-dir", default="wavSource", help="音频目录")

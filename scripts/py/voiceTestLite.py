@@ -482,7 +482,7 @@ def _probe_listenai_render_device(device_key, log=None):
 
 
 def _play_via_listenai_device(filepath, device_key, log):
-    cmd = ["play", "--audio-file", filepath, "--repeat", "1"]
+    cmd = ["play", "--audio-file", filepath, "--repeat", "1", "--skip-probe"]
     if device_key:
         cmd.extend(["--device-key", device_key])
     result = _run_listenai_play(cmd, log=log)
@@ -491,6 +491,71 @@ def _play_via_listenai_device(filepath, device_key, log):
     details = (result.stderr or result.stdout or "play failed").strip()
     log.warn(f"指定 ListenAI 声卡播报失败: {details}")
     return False
+
+
+def _prepare_fast_linux_wav(filepath, backend_target, log):
+    """Prepare a cached mono wav for low-latency ALSA playback."""
+    if not IS_LINUX or not backend_target:
+        return ""
+    if not shutil.which("aplay") or not shutil.which("ffmpeg"):
+        return ""
+    try:
+        source = os.path.abspath(filepath)
+        stat = os.stat(source)
+        cache_dir = os.path.join(os.path.dirname(source), ".aplay_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        digest = hashlib.sha1(f"{source}:{stat.st_mtime_ns}:{stat.st_size}".encode("utf-8")).hexdigest()[:12]
+        wav_path = os.path.join(cache_dir, f"{os.path.splitext(os.path.basename(source))[0]}_{digest}.wav")
+        if not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+            convert = subprocess.run(
+                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", source, "-ar", "16000", "-ac", "1", wav_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if convert.returncode != 0:
+                details = convert.stderr.decode("utf-8", errors="replace") if isinstance(convert.stderr, bytes) else str(convert.stderr)
+                log.debug(f"快速 aplay 音频转换失败，回退 listenai-play: {details.strip()}")
+                return ""
+        return wav_path
+    except Exception as exc:
+        log.debug(f"快速 aplay 音频准备异常，回退 listenai-play: {exc}")
+    return ""
+
+
+def _fast_linux_aplay(filepath, backend_target, log):
+    """Fast path for tight wake->command windows on Linux USB audio."""
+    wav_path = _prepare_fast_linux_wav(filepath, backend_target, log)
+    if not wav_path:
+        return False
+    try:
+        result = subprocess.run(
+            ["aplay", "-q", "-D", str(backend_target), wav_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode == 0:
+            return True
+        details = result.stderr.decode("utf-8", errors="replace") if isinstance(result.stderr, bytes) else str(result.stderr)
+        log.debug(f"快速 aplay 播放失败，回退 listenai-play: {details.strip()}")
+    except Exception as exc:
+        log.debug(f"快速 aplay 播放异常，回退 listenai-play: {exc}")
+    return False
+
+
+def _start_fast_linux_aplay(filepath, backend_target, log):
+    """Start ALSA playback without waiting; caller owns process cleanup."""
+    wav_path = _prepare_fast_linux_wav(filepath, backend_target, log)
+    if not wav_path:
+        return None
+    try:
+        return subprocess.Popen(
+            ["aplay", "-q", "-D", str(backend_target), wav_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except Exception as exc:
+        log.debug(f"快速 aplay 异步播放启动失败: {exc}")
+        return None
 
 
 def _format_listenai_devices(devices):
@@ -684,10 +749,16 @@ def play_audio(filepath, log, audio_target=None):
     if isinstance(audio_target, dict):
         device_key = str(audio_target.get("deviceKey") or "").strip()
         allow_default_fallback = _boolish(audio_target.get("allowDefaultFallback"), True)
+        backend_target = str(audio_target.get("backendTarget") or "").strip()
     elif audio_target:
         device_key = str(audio_target).strip()
+        backend_target = ""
+    else:
+        backend_target = ""
 
     if device_key:
+        if _fast_linux_aplay(filepath, backend_target, log):
+            return True
         try:
             if _play_via_listenai_device(filepath, device_key, log):
                 return True
@@ -1055,6 +1126,34 @@ class VoiceTest:
         self.log.info(f"播放音频: {name}")
         return play_audio(path, self.log, self.audio_target)
 
+    def _start_fast_play(self, name):
+        """Start direct ALSA playback for wake words so command playback can follow quickly."""
+        if not isinstance(self.audio_target, dict):
+            return None
+        backend_target = str(self.audio_target.get("backendTarget") or "").strip()
+        device_key = str(self.audio_target.get("deviceKey") or "").strip()
+        if not backend_target or not device_key:
+            return None
+        path = os.path.join(self.wav_dir, f"{name}.mp3")
+        if not os.path.isfile(path):
+            return None
+        self.log.info(f"播放音频: {name} (fast-async)")
+        return _start_fast_linux_aplay(path, backend_target, self.log)
+
+    def _stop_fast_play(self, proc):
+        if not proc:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=0.5)
+        except Exception as exc:
+            self.log.debug(f"快速异步播放清理异常: {exc}")
+
     # ── 串口初始化 ────────────────────────────────────────────
     def init_serial(self):
         self.reader = SerialReader(
@@ -1307,18 +1406,24 @@ class VoiceTest:
         for i in range(max_retry):
             self.log.info(f"  指定唤醒第{i+1}/{max_retry}次 [{target_wakeup}]...")
             self.reader.clear()
-            self.play(target_wakeup)
-            deadline = time.time() + 1.5
-            while time.time() < deadline:
-                wake_all = self.reader.get_all("wakeKw")
-                wake_unique = list(dict.fromkeys(wake_all))
-                if len(wake_unique) > 1:
-                    self.log.warn(f"  唤醒期间检测到多个不同结果: {[self.pinyin_to_zh(w) for w in wake_unique]}")
-                wake_raw = self.reader.get("wakeKw")
-                if wake_raw and self.pinyin_to_zh(wake_raw) == target_wakeup:
-                    self.log.info("  唤醒成功")
-                    return True
-                time.sleep(0.1)
+            fast_proc = self._start_fast_play(target_wakeup)
+            if fast_proc is None:
+                self.play(target_wakeup)
+            deadline = time.time() + 1.8
+            try:
+                while time.time() < deadline:
+                    wake_all = self.reader.get_all("wakeKw")
+                    wake_unique = list(dict.fromkeys(wake_all))
+                    if len(wake_unique) > 1:
+                        self.log.warn(f"  唤醒期间检测到多个不同结果: {[self.pinyin_to_zh(w) for w in wake_unique]}")
+                    wake_raw = self.reader.get("wakeKw")
+                    if wake_raw and self.pinyin_to_zh(wake_raw) == target_wakeup:
+                        self._stop_fast_play(fast_proc)
+                        self.log.info("  唤醒成功")
+                        return True
+                    time.sleep(0.05)
+            finally:
+                self._stop_fast_play(fast_proc)
         self.log.error(f"唤醒失败! (已尝试{max_retry}次)")
         return False
 
@@ -1585,7 +1690,16 @@ class VoiceTest:
         self.reader.clear()
         expected_proto = expected_proto or self.kw2proto.get(command, "")
 
-        if do_wakeup and not self.wakeup():
+        if do_wakeup:
+            self._pending_command_for_wakeup = command
+            try:
+                wake_ok = self.wakeup()
+            finally:
+                self._pending_command_for_wakeup = ""
+        else:
+            wake_ok = True
+
+        if not wake_ok:
             wake_status = str(getattr(self, "_last_wakeup_status", "") or "").strip()
             wake_detail = str(getattr(self, "_last_wakeup_detail", "") or "").strip()
             wake_verdict = "Skip(人工)" if wake_status == "command-window-expired" else "WakeupFail"

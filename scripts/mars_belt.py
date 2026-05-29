@@ -20,8 +20,12 @@ from typing import Any, Dict, List, Optional, Sequence
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
 
-# Smart defaults based on OS
-DEFAULT_PORT = "/dev/ttyACM0" if IS_LINUX else "COM14"
+# Smart defaults based on OS. ACM0 is unstable on the current bench; use ACM1
+# for runtime logs and burn handshakes unless explicitly overridden.
+DEFAULT_LOG_PORT = "/dev/ttyACM1" if IS_LINUX else "COM14"
+DEFAULT_PROTOCOL_PORT = "/dev/ttyACM2" if IS_LINUX else "COM13"
+DEFAULT_BURN_PORT = "/dev/ttyACM1" if IS_LINUX else "COM14"
+DEFAULT_PORT = DEFAULT_LOG_PORT
 DEFAULT_CTRL_PORT = "/dev/ttyACM4" if IS_LINUX else "COM15"
 
 INTERNAL_PY_ROOT = Path(__file__).resolve().parent / "py"
@@ -547,7 +551,7 @@ def generate_email_report(task_dir: Path, result_dir: Path) -> None:
                 <div class="info-item"><label>固件版本</label><span>{escape(str(version))}</span></div>
                 <div class="info-item"><label>语言</label><span>{escape(language)}</span></div>
                 <div class="info-item"><label>测试时间</label><span>{escape(test_time)}</span></div>
-                <div class="info-item"><label>串口配置</label><span>/dev/ttyACM4 + /dev/ttyACM0</span></div>
+                <div class="info-item"><label>串口配置</label><span>ctrl=/dev/ttyACM4 log=/dev/ttyACM1 protocol=/dev/ttyACM2 burn=/dev/ttyACM1</span></div>
             </div>
             <div class="result-box{' fail' if conclusion != 'PASS' else ''}">
                 <div class="pass-rate">{pass_rate}%</div>
@@ -1112,6 +1116,7 @@ def enter_burn_mode(
     log_file: Path,
     *,
     pre_burn_reboot: bool = False,
+    boot_switch: str = "uut-switch3",
 ) -> None:
     write_burn_log(log_file, "Enter burn mode")
     if pre_burn_reboot:
@@ -1119,12 +1124,10 @@ def enter_burn_mode(
     else:
         write_burn_log(log_file, "Skip pre-burn reboot; use stable 4-step burn entry flow")
     wait_port(burn_port, attempts=20, delay_ms=500, log_file=log_file)
-    write_burn_log(
-        log_file,
-        "Burn mode 4-step sequence: uut-switch1.off -> uut-switch2.on -> uut-switch1.on -> uut-switch2.off",
-    )
+    boot_switch = str(boot_switch or "uut-switch3").strip()
+    write_burn_log(log_file, f"Burn mode 4-step sequence: uut-switch1.off -> {boot_switch}.on -> uut-switch1.on -> {boot_switch}.off")
     invoke_ctrl_sequence(
-        ["uut-switch1.off", "uut-switch2.on", "uut-switch1.on", "uut-switch2.off"],
+        ["uut-switch1.off", f"{boot_switch}.on", "uut-switch1.on", f"{boot_switch}.off"],
         ctrl_port=ctrl_port,
         ctrl_baud=ctrl_baud,
         cmd_delay_ms=cmd_delay_ms,
@@ -1142,14 +1145,14 @@ def exit_burn_mode(
     cmd_delay_ms: int,
     boot_wait_seconds: int,
     log_file: Path,
+    *,
+    boot_switch: str = "uut-switch3",
 ) -> None:
     write_burn_log(log_file, "Exit burn mode and restore power")
-    write_burn_log(
-        log_file,
-        "Restore 3-step sequence: uut-switch2.off -> uut-switch1.off -> uut-switch1.on",
-    )
+    boot_switch = str(boot_switch or "uut-switch3").strip()
+    write_burn_log(log_file, f"Restore 3-step sequence: {boot_switch}.off -> uut-switch1.off -> uut-switch1.on")
     invoke_ctrl_sequence(
-        ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
+        [f"{boot_switch}.off", "uut-switch1.off", "uut-switch1.on"],
         ctrl_port=ctrl_port,
         ctrl_baud=ctrl_baud,
         cmd_delay_ms=cmd_delay_ms,
@@ -1454,7 +1457,7 @@ def run_burn(args: argparse.Namespace) -> int:
             write_burn_log(log_file, "未从 package zip 中提取到 version，跳过版本校验")
     # =================================================
 
-    runtime_log_port = str(getattr(args, "runtime_log_port", "") or args.burn_port).strip()
+    runtime_log_port = str(getattr(args, "runtime_log_port", "") or DEFAULT_LOG_PORT).strip()
     runtime_log_baud = int(getattr(args, "runtime_log_baud", 115200) or 115200)
 
     write_burn_log(log_file, "========== Burn flow start ==========")
@@ -1474,6 +1477,7 @@ def run_burn(args: argparse.Namespace) -> int:
                     args.burn_mode_wait_ms,
                     log_file,
                     pre_burn_reboot=args.pre_burn_reboot,
+                    boot_switch=args.boot_switch,
                 )
                 invoke_burn_tool(tool_path, fw_path, args.burn_port, args.baud, log_file)
                 exit_burn_mode(
@@ -1483,6 +1487,7 @@ def run_burn(args: argparse.Namespace) -> int:
                     args.cmd_delay_ms,
                     args.boot_wait_seconds,
                     log_file,
+                    boot_switch=args.boot_switch,
                 )
                 set_device_loglevel(runtime_log_port, runtime_log_baud, args.skip_loglevel, log_file)
 
@@ -1514,6 +1519,7 @@ def run_burn(args: argparse.Namespace) -> int:
                         args.cmd_delay_ms,
                         args.boot_wait_seconds,
                         log_file,
+                        boot_switch=args.boot_switch,
                     )
                 except Exception as restore_exc:
                     write_burn_log(log_file, f"Power restore also failed: {restore_exc}")
@@ -2153,12 +2159,12 @@ def build_parser() -> argparse.ArgumentParser:
     package_weekly.add_argument("--scene", default="")
     package_weekly.add_argument("--source-release-id", default="")
     package_weekly.add_argument("--timeout-sec", type=int, default=1800)
-    package_weekly.add_argument("--log-port", default=DEFAULT_PORT)
-    package_weekly.add_argument("--protocol-port", default="/dev/ttyACM1" if IS_LINUX else "COM13")
+    package_weekly.add_argument("--log-port", default=DEFAULT_LOG_PORT)
+    package_weekly.add_argument("--protocol-port", default=DEFAULT_PROTOCOL_PORT)
     package_weekly.add_argument("--uart0-port", default="")
     package_weekly.add_argument("--uart1-port", default="")
     package_weekly.add_argument("--ctrl-port", default=DEFAULT_CTRL_PORT)
-    package_weekly.add_argument("--burn-port", default=DEFAULT_PORT)
+    package_weekly.add_argument("--burn-port", default=DEFAULT_BURN_PORT)
     package_weekly.add_argument("--task-dir", default="")
     package_weekly.add_argument("--variants", default="")
     package_weekly.add_argument("--refresh-live", action="store_true")
@@ -2220,7 +2226,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate_suite.add_argument("--profile", choices=["parameter", "auto", "base", "changed", "voice-reg", "multi-wke"], default="auto")
     generate_suite.add_argument("--override", action="append", default=[])
     generate_suite.add_argument("--out-dir", default="")
-    generate_suite.add_argument("-p", "--port", default=DEFAULT_PORT)
+    generate_suite.add_argument("-p", "--port", default=DEFAULT_LOG_PORT)
     generate_suite.add_argument("--ctrl-port", default=DEFAULT_CTRL_PORT)
     generate_suite.set_defaults(func=forward_generate_suite)
 
@@ -2233,7 +2239,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("-f", "--file", default="deviceInfo_generated.json")
     validate.add_argument("-r", "--run-times", type=int, default=0)
     validate.add_argument("-l", "--label", default="mars-belt")
-    validate.add_argument("-p", "--port", default=DEFAULT_PORT)
+    validate.add_argument("-p", "--port", default=DEFAULT_LOG_PORT)
     validate.add_argument("--ctrl-port", default=DEFAULT_CTRL_PORT)
     validate.add_argument("--protocol-port", default="")
     validate.add_argument("--pretest", action="store_true")
@@ -2255,7 +2261,7 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("--package-zip", default="")
     burn.add_argument("--firmware-bin", default="")
     burn.add_argument("--ctrl-port", default=DEFAULT_CTRL_PORT)
-    burn.add_argument("--burn-port", default=DEFAULT_PORT)
+    burn.add_argument("--burn-port", default=DEFAULT_BURN_PORT)
     burn.add_argument("--ctrl-baud", type=int, default=115200)
     burn.add_argument("--baud", type=int, default=460800)
     burn.add_argument("--runtime-log-port", default="")
@@ -2264,6 +2270,7 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("--cmd-delay-ms", type=int, default=300)
     burn.add_argument("--burn-mode-wait-ms", type=int, default=2000)
     burn.add_argument("--pre-burn-reboot", action="store_true", help="Send reboot on ctrl port before the 4-step burn entry flow")
+    burn.add_argument("--boot-switch", default="uut-switch3", help="Control switch used for boot strap; current 3021 bench uses uut-switch3")
     burn.add_argument("--boot-wait-seconds", type=int, default=5)
     burn.add_argument("--skip-loglevel", action="store_true")
     burn.add_argument("--keep-extracted", action="store_true")

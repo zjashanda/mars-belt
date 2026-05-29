@@ -11,11 +11,16 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `FULL_CHAIN_VALIDATION_RULES.md`
 - `IMPORTANT_CONFIG.md`
 - `MARS_BELT_WORKFLOW.md`
+- `PLATFORM_API_VALIDATION.md`
 - `SKILL.md`
 - `SKILLbak.md`
+- `SYNTHESIS_MANAGEMENT_VALIDATION.md`
 - `TOOLS.example.md`
 - `platform_feature_test_plan.md`
-- `references/语音注册.log`
+- `references/V4.0.5需求/合成播报批量导入模板.xlsx`
+- `references/V4.0.5需求/待测需求.txt`
+- `references/V4.0.5需求/播报固件需求梳理20260518.xlsx`
+- `references/V4.0.5需求/音频合成需求记录20260507.txt`
 - `references/语音注册命令词学习手工验证模板.md`
 - `scripts/20250327122938_功能测试用例.xlsx`
 - `scripts/auto_resume_3021_block_retests.sh`
@@ -40,18 +45,52 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `scripts/py/listenai_local_base_profiles.py`
 - `scripts/py/listenai_packaging_rules.py`
 - `scripts/py/listenai_parameter_catalog.py`
+- `scripts/py/listenai_platform_api_validation.py`
 - `scripts/py/listenai_product_options.py`
 - `scripts/py/listenai_product_options_export.py`
 - `scripts/py/listenai_profile_suite.py`
 - `scripts/py/listenai_resolve_and_package.py`
 - `scripts/py/listenai_round2_targeted_retests.py`
 - `scripts/py/listenai_shared_product_flow.py`
+- `scripts/py/listenai_synthesis_validation.py`
 - `scripts/py/listenai_task_support.py`
 - `scripts/py/listenai_test_case_catalog.py`
 - `scripts/py/listenai_voice_test_lite.py`
 - `scripts/py/listenai_weekly_validation_runner.py`
+- `scripts/py/platform_api_validation/__init__.py`
+- `scripts/py/platform_api_validation/generic_validation.py`
+- `scripts/py/platform_api_validation/validation.py`
+- `scripts/py/synthesis_management/__init__.py`
+- `scripts/py/synthesis_management/batch_import_negative.py`
+- `scripts/py/synthesis_management/broadcast_device_matrix.py`
+- `scripts/py/synthesis_management/evidence_review.py`
+- `scripts/py/synthesis_management/import_artifact_publish_validation.py`
+- `scripts/py/synthesis_management/import_boundary_validation.py`
+- `scripts/py/synthesis_management/import_downstream_validation.py`
+- `scripts/py/synthesis_management/repeated_burn_log_stability.py`
+- `scripts/py/synthesis_management/v405_validation.py`
+- `scripts/py/synthesis_management/validation.py`
 - `scripts/py/voiceTestLite.py`
 - `scripts/vol_level_probe.py`
+- `scripts/wavSource/.aplay_cache/中等音量_2b6dc1bce33b.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_2a0c29d3581b.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_a4d226d22c53.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_b8b93581d050.wav`
+- `scripts/wavSource/.aplay_cache/增大音量_12845b471d7d.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_08f12aa1579d.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_4e3efd11e18e.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_a7e9bdf7bc9a.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_e92470385a6b.wav`
+- `scripts/wavSource/.aplay_cache/打开风扇_73785ad2b23a.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_4ac0235826c3.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_9dbbf9825d1e.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_dd66bd46243d.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_f7d631f600fb.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_0ecfea05b405.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_b2f550fa19aa.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_b51108d0de23.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_f9fbb0c93ce1.wav`
+- `scripts/wavSource/.aplay_cache/退出识别_33c3dad4c7c5.wav`
 - `scripts/wavSource/specificLearn.mp3`
 - `scripts/wavSource/一小时关机.mp3`
 - `scripts/wavSource/一帆风顺.mp3`
@@ -117,7 +156,6 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `tools/audio/repos/listenai-play/scripts/install_laid_linux.sh`
 - `tools/audio/repos/listenai-play/scripts/install_laid_windows.ps1`
 - `tools/audio/repos/listenai-play/scripts/listenai_play.py`
-- `tools/audio/repos/listenai-play/sndcard-ioctrl-adc&pdm2uac-cdc_20250826.bin`
 - `tools/audio/repos/listenai-play/声卡命令.txt`
 - `tools/audio/sources.json`
 - `tools/mail/send_email.py`
@@ -172,8 +210,85 @@ system: |
     - 再把目标固件复制到 `scripts/burn/app.bin`
     - `Uart_Burn_Tool` 只允许烧录 `scripts/burn/app.bin`
     - 禁止把任意外部 `.bin` 路径直接喂给烧录工具
+  17. 当前本地 3021 台架默认串口：日志 `/dev/ttyACM1@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM1@460800`；不要再把 `/dev/ttyACM0` 当运行日志口或烧录口使用，除非用户明确恢复。
 
 ---
+
+
+# 🎙️ 合成管理验证规则
+
+## 适用范围
+- 用户要求验证平台「合成管理」「音频合成」「播报合成」时，必须使用独立模块 `scripts/py/synthesis_management/`。
+- 兼容入口仍保留：`scripts/py/listenai_synthesis_validation.py`，内部只转调 `synthesis_management.validation`。
+- 标准命令：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast`。
+- 模块命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.validation --publish-broadcast`。
+- 若用户明确要求在账号页面查看新生成物，使用：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast --keep-platform-records`，并在回复中明确临时记录名称和 ID。
+- Token 仍按本 skill 规则从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取。
+- 结果统一写入 `artifacts/synthesis-validation/<YYYYMMDD-HHMMSS>/`，不得散落到其他目录。
+
+## 必测链路
+1. 菜单和字典巡检：确认 `合成管理/音频合成/播报合成`、发音人、压缩比存在。
+2. 音频合成：模板下载、`generateAudio` 试听、临时项目创建/查询/详情/编辑、Excel 导入、草稿保存、产物详情、备注编辑、草稿转合成、手填产物合成、zip 下载、产物/项目清理。
+3. 播报合成：芯片/版本选项、临时产品创建/查询/详情/编辑、自动播报版本创建、SDK 发布并轮询 `status=success`、SDK zip 下载、协议播报版本创建、版本编辑、版本复制、版本/产品清理。
+4. 自定义音频：生成小 WAV、上传、查询、备注编辑、下载校验、Excel+目录批量导入、删除闭环。
+
+## 播报批量导入
+- 播报合成版本配置里的“批量导入”实际调用 `/biz/audiofile/batchImport`。
+- 必须用 `.mp3 + .xlsx` 组合验证：mp3 要满足 `<=20KB`、`16K` 单通道、`16bit`、码率 `<=32kbps`；xlsx 必须包含 `播报内容`、`音频描述`、`接收协议`。
+- `音频描述` 必须与 mp3 文件名去扩展名一致；导入成功后返回的 `reply/comments/recProtocol` 要继续用于创建播报版本并发布 SDK，不能只停留在接口返回。
+- 异常矩阵必须覆盖：文件过大、采样率 `32000/48000/64000`、多通道、码率超限、损坏/空文件、音频后缀 `.wav/.txt/.aac`、xlsx 文件名不匹配、缺列、空字段、非法协议、缺少 xlsx、缺少音频。
+- 异常矩阵命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.batch_import_negative`。
+- 当前已知风险：部分页面规则只在前端拦截，后端会放行 `.wav`/伪后缀/mp3 文件名不匹配/缺列空值/非法协议/缺少音频，且这些异常行还能继续创建播报版本；报告时必须明确标为后端校验缺失。
+- 若要把播报 SDK 下发到 3021 设备复核，先静态检查 SDK 内 `cfg.json/ring_cfg.json/fw.bin`，再按固定 `scripts/burn/app.bin` 流程烧录；当前默认日志/烧录口使用 `/dev/ttyACM1`，协议口使用 `/dev/ttyACM2`。烧录后必须看到日志串口、协议口或实际播报证据，不能只凭 SDK zip 可下载或烧录工具成功判定设备侧通过。若 `fw.bin/fw.img` 烧录成功但设备无日志/无协议响应，记录为当前 SDK 产物或烧录路径不适配，并恢复已知可用固件。
+
+## 合成导入与边界异常
+- 用户要求验证“音频合成/播报合成从文件导入表、异常兜底、合成上限、条数上限、单条字符上限”时，必须补跑专项边界脚本，不得只跑正常全链路。
+- 数据来源口径：
+  - 表格导入内容可以按模板自动构造正常/异常数据，用于验证导入解析和异常兜底。
+  - UI 页面元素、下拉枚举、发音人、压缩比、芯片/版本等不能自造，必须来自平台菜单、字典、options 或页面已有数据。
+  - 若直接调用 API 传入 UI 不可能选择的枚举值，只能标为“接口健壮性探测”，不能写成 UI 可执行用例失败。
+  - V4.0.5 起主结论必须模拟“正常人在 UI 上可完成的操作”：可以调用 UI 实际会调用的接口，但 payload 必须等价于 UI 表单、导入表和文件选择产生的数据；UI 会拦截的负例只记录为前端校验，不得绕过 UI 强行提交后端并混入主结论。
+  - 禁止为了覆盖异常而直接修改 API payload，强行写入 UI 页面不可填写、不可选择、不可提交的字段或参数；这类内容只能单独列为非 UI 路径接口健壮性探测。
+- 专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.import_boundary_validation`。
+- V4.0.5 播报固件专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.v405_validation --publish-broadcast --keep-platform-records --no-persist-token`，覆盖音频合成导入、播报控制导入/新增、控制配置新增、播报音频上传异常、SDK 发布和可选 3021 烧录。
+- V4.0.5 完成审计必须补充逐需求报告，参考 `artifacts/platform-validation/20260528-v405-completion-audit/v405_completion_audit.md`；深定制要至少覆盖全词条打包、词条子集打包、深度调优保存/打包，并明确产物是否真的体现调优参数。
+- V4.0.5 当前已知风险：菜单/页面文案未完全改名，WAV bit depth 与 MP3 码率校验放行，深度调优阈值保存后未落入下载产物，3021 设备运行态未拿到串口/协议证据。
+- 音频合成导入表必须覆盖：空表、缺列、空字段、仅空格、序号非数字、重复音频名/序号、非法文件名字符、音频名长度、单条文本长度、导入行数、损坏 xlsx、csv 后缀。
+- 播报合成导入表必须覆盖：合法 1/10 行、50/100/200/500 行、播报内容长度、音频描述长度、仅空格、重复音频描述、重复接收协议；音频文件格式异常仍由 `batch_import_negative.py` 覆盖。
+- 试听合成边界必须覆盖：空文本、长文本、语速/音量 `1/100` 边界与 `0/101/负数/999` 越界、非法发音人。
+- 判定时不能只看接口是否失败：预期拒绝却 `code=200` 是风险；失败但只返回“服务器异常/空信息”也要标为错误信息不合格。
+- 对导入阶段被错误放行的异常行，还必须执行下游闭环复核：`PYTHONPATH=scripts/py python3 -m synthesis_management.import_downstream_validation --source-report <synthesis_import_boundary_result.json>`，确认这些异常行是否还能继续创建音频合成产物或播报版本。
+
+## 安全约束
+- 所有写入记录必须使用 `AUTO_TEST_*` 前缀。
+- 中间失败也必须先尝试清理已创建的临时项目、产物、版本、产品和自定义音频。
+- 认证失败、接口失败、报告文件中不得输出 token 明文。
+- SDK 发布没有轮询到 `success` 不能算播报合成完整通过。
+- 只读巡检或 smoke 不等同于全功能验证；用户要求“像固件打包一样覆盖每个功能点”时，必须跑完整 40 项左右功能点并在报告中写明覆盖范围。
+- `--keep-platform-records` 只用于人工页面复核；复核完成后需要再执行标准命令触发初始清理，避免长期残留 `AUTO_TEST_*` 数据。
+
+详细说明见 `SYNTHESIS_MANAGEMENT_VALIDATION.md`。
+
+# 🧪 平台接口验证规则
+
+## 适用范围
+- 用户要求扫描或验证平台业务接口时，优先使用独立模块 `scripts/py/platform_api_validation/`。
+- 兼容入口：`scripts/py/listenai_platform_api_validation.py`。
+- 标准命令：`python3 scripts/py/listenai_platform_api_validation.py`。
+- 模块命令：`PYTHONPATH=scripts/py python3 -m platform_api_validation.validation`。
+- Token 统一从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取，报告中不得输出 token 明文。
+- 结果统一写入 `artifacts/platform-validation/<YYYYMMDD-HHMMSS>/`。
+
+## 当前已落地链路
+1. 我的发音词典：分页、模板下载、中文分词、受控新增、详情、导出、TXT 导入、清理。
+2. 协议模板：分页、受控新增、详情、配置查询、受控刷新协议字段、记录查询、清理。
+3. 算法/补丁打包：算法词条分页/详情、音频配置模板下载、模板导入解析、深度配置读取、关联固件详情与算法配置读取。
+
+## 安全约束
+- 所有平台写入必须使用 `AUTO_TEST_*` 或 `自动测试*` 受控前缀，默认执行清理。
+- `--keep-platform-records` 只允许用于人工页面复核，复核后必须再次跑标准命令清理。
+- 未创建受控 release 时，不允许对历史共享记录执行 `depthConfigSave`、`saveAlgoConfig`、`rewriteAlgoWakeupAndCmdConfigs`、`releaseAlgo/delete`。
+- 下载接口若当前样本无打包产物或日志，按条件跳过记录，不得误判为平台接口失败。
 
 # 🚨 重启异常判定规则（最高优先级）
 
@@ -476,8 +591,9 @@ recovery:
   burn_control:
     logic: |
       烧录控制只允许使用当前 switch 命令：
-      - 进入烧录模式: `uut-switch1.off` → `uut-switch2.on` → `uut-switch1.on` → `uut-switch2.off`
-      - 退出烧录模式并恢复上电: `uut-switch2.off` → `uut-switch1.off` → `uut-switch1.on`
+      - 当前 3021 台架进入烧录模式: `uut-switch1.off` → `uut-switch3.on` → `uut-switch1.on` → `uut-switch3.off`
+      - 当前 3021 台架退出烧录模式并恢复上电: `uut-switch3.off` → `uut-switch1.off` → `uut-switch1.on`
+      - 历史 3122 台架可能使用 `uut-switch2` 作为 boot 线；未确认前不得把 3122 的 `uut-switch2` 逻辑套到 3021
       默认按单次连续会话下发完整序列，不拆成其他替代流程
       若 ROM 握手异常，先恢复正常上电基线，再按
       `reboot -> 等控制口恢复 -> 烧录四步 -> Uart_Burn_Tool`

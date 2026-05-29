@@ -13,7 +13,7 @@ from listenai_task_support import RUNTIME_ROOT, TASKS_ROOT, load_global_audio_ca
 
 DEFAULT_TEST_CATALOG = str(RUNTIME_ROOT / "catalog" / "listenai_test_case_catalog.json")
 DEFAULT_OUT_DIR = str(TASKS_ROOT / "listenai_executable_suite")
-DEFAULT_LOG_PORT = "/dev/ttyACM0" if platform.system() == "Linux" else "COM14"
+DEFAULT_LOG_PORT = "/dev/ttyACM1" if platform.system() == "Linux" else "COM14"
 DEFAULT_CTRL_PORT = "/dev/ttyACM4" if platform.system() == "Linux" else "COM15"
 
 
