@@ -16,11 +16,16 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `SKILLbak.md`
 - `SYNTHESIS_MANAGEMENT_VALIDATION.md`
 - `TOOLS.example.md`
+- `deviceInfo_generated.example.json`
+- `orion.skilltest.json`
 - `platform_feature_test_plan.md`
 - `references/V4.0.5需求/合成播报批量导入模板.xlsx`
 - `references/V4.0.5需求/待测需求.txt`
 - `references/V4.0.5需求/播报固件需求梳理20260518.xlsx`
 - `references/V4.0.5需求/音频合成需求记录20260507.txt`
+- `references/docs/orion-skilltest-profile-framework.md`
+- `references/docs/orion.skilltest.json`
+- `references/语音注册.log`
 - `references/语音注册命令词学习手工验证模板.md`
 - `scripts/20250327122938_功能测试用例.xlsx`
 - `scripts/auto_resume_3021_block_retests.sh`
@@ -72,25 +77,6 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `scripts/py/synthesis_management/validation.py`
 - `scripts/py/voiceTestLite.py`
 - `scripts/vol_level_probe.py`
-- `scripts/wavSource/.aplay_cache/中等音量_2b6dc1bce33b.wav`
-- `scripts/wavSource/.aplay_cache/减小音量_2a0c29d3581b.wav`
-- `scripts/wavSource/.aplay_cache/减小音量_a4d226d22c53.wav`
-- `scripts/wavSource/.aplay_cache/减小音量_b8b93581d050.wav`
-- `scripts/wavSource/.aplay_cache/增大音量_12845b471d7d.wav`
-- `scripts/wavSource/.aplay_cache/小聆小聆_08f12aa1579d.wav`
-- `scripts/wavSource/.aplay_cache/小聆小聆_4e3efd11e18e.wav`
-- `scripts/wavSource/.aplay_cache/小聆小聆_a7e9bdf7bc9a.wav`
-- `scripts/wavSource/.aplay_cache/小聆小聆_e92470385a6b.wav`
-- `scripts/wavSource/.aplay_cache/打开风扇_73785ad2b23a.wav`
-- `scripts/wavSource/.aplay_cache/最大音量_4ac0235826c3.wav`
-- `scripts/wavSource/.aplay_cache/最大音量_9dbbf9825d1e.wav`
-- `scripts/wavSource/.aplay_cache/最大音量_dd66bd46243d.wav`
-- `scripts/wavSource/.aplay_cache/最大音量_f7d631f600fb.wav`
-- `scripts/wavSource/.aplay_cache/最小音量_0ecfea05b405.wav`
-- `scripts/wavSource/.aplay_cache/最小音量_b2f550fa19aa.wav`
-- `scripts/wavSource/.aplay_cache/最小音量_b51108d0de23.wav`
-- `scripts/wavSource/.aplay_cache/最小音量_f9fbb0c93ce1.wav`
-- `scripts/wavSource/.aplay_cache/退出识别_33c3dad4c7c5.wav`
 - `scripts/wavSource/specificLearn.mp3`
 - `scripts/wavSource/一小时关机.mp3`
 - `scripts/wavSource/一帆风顺.mp3`
@@ -156,6 +142,7 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `tools/audio/repos/listenai-play/scripts/install_laid_linux.sh`
 - `tools/audio/repos/listenai-play/scripts/install_laid_windows.ps1`
 - `tools/audio/repos/listenai-play/scripts/listenai_play.py`
+- `tools/audio/repos/listenai-play/sndcard-ioctrl-adc&pdm2uac-cdc_20250826.bin`
 - `tools/audio/repos/listenai-play/声卡命令.txt`
 - `tools/audio/sources.json`
 - `tools/mail/send_email.py`
@@ -211,9 +198,61 @@ system: |
     - `Uart_Burn_Tool` 只允许烧录 `scripts/burn/app.bin`
     - 禁止把任意外部 `.bin` 路径直接喂给烧录工具
   17. 当前本地 3021 台架默认串口：日志 `/dev/ttyACM1@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM1@460800`；不要再把 `/dev/ttyACM0` 当运行日志口或烧录口使用，除非用户明确恢复。
+  18. 根目录 `orion.skilltest.json` 是 Augur/Orion 展示“可测模块 -> 测试方案 -> 自然语言用例 -> 执行证据”的结构化索引；新增、删除或调整平台功能测试模块、入口脚本、证据口径、风险等级、默认用例时，必须同步更新该 JSON，并执行 `python3 -m json.tool orion.skilltest.json` 校验。
+  19. 同步 git 前必须先构建可迁移发布副本：包含 `SKILL.md`、`orion.skilltest.json`、必要脚本、模板、参考资料和工具；排除 `TOOLS.md`、`deviceInfo_generated.json`、`plan.md`、`artifacts/`、烧录临时 `app.bin`、缓存和本机结果。其他 PC 拉取后应能基于 `TOOLS.example.md` 与 `deviceInfo_generated.example.json` 补齐本机配置后直接使用。
+  20. 生成报告、JSON、CSV、Markdown、HTML、xlsx、zip 或其他交付文件后，必须做可打开性和编码校验，避免其他环境打开乱码或文件损坏；校验结果要写入结果目录或 `plan.md`。
 
 ---
 
+
+# 🧭 Orion SkillTest Profile 维护规则
+
+## 适用范围
+- `orion.skilltest.json` 位于 skill 根目录，供 Augur/Orion 扫描当前 skill 支持的平台化测试能力。
+- 该文件不是示例文档，而是当前能力清单。任何测试模块变更都必须同步维护。
+
+## 必须同步更新的场景
+1. 新增或下线功能模块，例如新增合成管理子模块、语音注册策略、平台接口验证、设备验证或专项需求验证。
+2. 修改模块执行入口，例如脚本路径、命令参数、runner 类型、默认模式或结果目录。
+3. 修改证据口径，例如 `browser_ui`、`ui_equivalent_api`、`api_probe`、`device_evidence` 的归类规则。
+4. 修改真实执行副作用，例如新增烧录、上下电、播放音频、平台记录保留或 SDK 发布动作。
+5. 修改默认自然语言用例、PASS/FAIL/BLOCKED 判定、前置条件或风险等级。
+
+## 更新要求
+- `capabilities[].id` 必须稳定且唯一，不能随意改名；确需改名时要保留迁移说明。
+- 每个能力必须包含可展示的自然语言 `test_cases`，不得只写命令行。
+- 设备相关能力必须明确串口、声卡、烧录、上下电等副作用和阻塞条件。
+- UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为辅助探测。
+- 更新后必须执行：
+
+```bash
+python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
+```
+
+- 如果 `SKILL.md`、`SYNTHESIS_MANAGEMENT_VALIDATION.md`、`语音注册专项测试说明.md` 或脚本能力发生变化，而 `orion.skilltest.json` 未同步，视为 skill 资料不完整。
+
+# 生成文件可用性与编码校验规则
+
+## 适用范围
+- 所有对外交付或后续流程会复用的文件：报告、用例表、测试数据、JSON、CSV、Markdown、HTML、xlsx、zip、固件/SDK 索引、邮件正文附件。
+- 本地临时缓存不需要交付时可不校验，但不得混入最终结果目录或 git 发布副本。
+
+## 生成要求
+- 文本类文件统一使用 UTF-8 写入；面向 Excel 打开的 CSV 优先使用 `utf-8-sig`，或直接生成 xlsx。
+- JSON 必须保证可被标准 JSON parser 读取，不允许含注释、尾逗号或半截写入内容。
+- xlsx 必须用标准库或 `openpyxl`/`xlsxwriter` 生成，不能把 CSV 改后缀伪装成 xlsx。
+- zip/固件/SDK 包必须保持二进制原样写入，不能经过文本编码转换。
+
+## 必做校验
+1. 文本/Markdown/HTML/CSV：生成后立即用 `encoding="utf-8"` 或 CSV 约定编码重新读取；如含中文，抽样确认关键字段未变成乱码。
+2. JSON：执行 `python3 -m json.tool <file> >/tmp/<name>.json.check` 或等价 parser 校验。
+3. xlsx：使用 `openpyxl.load_workbook(<file>, read_only=True)` 或等价方式打开并读取表头/首行。
+4. zip：执行 `unzip -t <file>` 或 Python `zipfile.ZipFile.testzip()`。
+5. 邮件/报告交付：发送前打开最终生成文件或读取正文，确认标题、中文章节名、表格字段可正常显示。
+
+## 记录要求
+- 校验通过要在对应结果目录写入 `validation_summary.json`、`README.md` 或报告附录；临时任务也要同步到 `plan.md`。
+- 校验失败必须先修复文件生成逻辑，再交付或同步 git；不得只在回复中说明“本机可用”。
 
 # 🎙️ 合成管理验证规则
 
@@ -233,12 +272,13 @@ system: |
 4. 自定义音频：生成小 WAV、上传、查询、备注编辑、下载校验、Excel+目录批量导入、删除闭环。
 
 ## 播报批量导入
-- 播报合成版本配置里的“批量导入”实际调用 `/biz/audiofile/batchImport`。
+- 播报合成版本配置里的“批量导入”必须以真实 UI 为准：前端选择文件夹后会读取 `.xlsx`，只保留 `.mp3/.wav/.xlsx`，前端表格校验通过后才调用 `/biz/audiofile/batchImportItems`。`/biz/audiofile/batchImport` 只作为旧接口/后端健壮性探测，不能直接写成 UI 路径结论。
 - 必须用 `.mp3 + .xlsx` 组合验证：mp3 要满足 `<=20KB`、`16K` 单通道、`16bit`、码率 `<=32kbps`；xlsx 必须包含 `播报内容`、`音频描述`、`接收协议`。
 - `音频描述` 必须与 mp3 文件名去扩展名一致；导入成功后返回的 `reply/comments/recProtocol` 要继续用于创建播报版本并发布 SDK，不能只停留在接口返回。
 - 异常矩阵必须覆盖：文件过大、采样率 `32000/48000/64000`、多通道、码率超限、损坏/空文件、音频后缀 `.wav/.txt/.aac`、xlsx 文件名不匹配、缺列、空字段、非法协议、缺少 xlsx、缺少音频。
 - 异常矩阵命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.batch_import_negative`。
-- 当前已知风险：部分页面规则只在前端拦截，后端会放行 `.wav`/伪后缀/mp3 文件名不匹配/缺列空值/非法协议/缺少音频，且这些异常行还能继续创建播报版本；报告时必须明确标为后端校验缺失。
+- 严格 UI 结论必须由浏览器 UI 或人工 UI 操作触发；直接调 `/biz/audiofile/validate`、`/biz/audiofile/batchImport`、`/biz/audiofile/batchImportItems` 只能标为“UI 等价 API”或“后端健壮性探测”。特别是 `.wav`、MP3 码率、WAV bit depth 等上传限制，若没有浏览器证据，不得写成前端 UI 缺陷。
+- 当前已知 API 探测风险：后端接口曾放行 `.wav`/伪后缀/mp3 文件名不匹配/缺列空值/非法协议/缺少音频，且这些异常行还能继续创建播报版本；报告时必须明确标为后端校验缺失或待 UI 复核，不能混入 UI 主结论。
 - 若要把播报 SDK 下发到 3021 设备复核，先静态检查 SDK 内 `cfg.json/ring_cfg.json/fw.bin`，再按固定 `scripts/burn/app.bin` 流程烧录；当前默认日志/烧录口使用 `/dev/ttyACM1`，协议口使用 `/dev/ttyACM2`。烧录后必须看到日志串口、协议口或实际播报证据，不能只凭 SDK zip 可下载或烧录工具成功判定设备侧通过。若 `fw.bin/fw.img` 烧录成功但设备无日志/无协议响应，记录为当前 SDK 产物或烧录路径不适配，并恢复已知可用固件。
 
 ## 合成导入与边界异常
@@ -247,12 +287,12 @@ system: |
   - 表格导入内容可以按模板自动构造正常/异常数据，用于验证导入解析和异常兜底。
   - UI 页面元素、下拉枚举、发音人、压缩比、芯片/版本等不能自造，必须来自平台菜单、字典、options 或页面已有数据。
   - 若直接调用 API 传入 UI 不可能选择的枚举值，只能标为“接口健壮性探测”，不能写成 UI 可执行用例失败。
-  - V4.0.5 起主结论必须模拟“正常人在 UI 上可完成的操作”：可以调用 UI 实际会调用的接口，但 payload 必须等价于 UI 表单、导入表和文件选择产生的数据；UI 会拦截的负例只记录为前端校验，不得绕过 UI 强行提交后端并混入主结论。
+  - V4.0.5 起主结论必须模拟“正常人在 UI 上可完成的操作”：严格 UI 结论必须由浏览器 UI/人工 UI 触发；调用 UI 同款接口但未经过前端组件的，只能写成“UI 等价 API 辅助验证”。UI 会拦截的负例只记录为前端校验，不得绕过 UI 强行提交后端并混入主结论。
   - 禁止为了覆盖异常而直接修改 API payload，强行写入 UI 页面不可填写、不可选择、不可提交的字段或参数；这类内容只能单独列为非 UI 路径接口健壮性探测。
 - 专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.import_boundary_validation`。
 - V4.0.5 播报固件专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.v405_validation --publish-broadcast --keep-platform-records --no-persist-token`，覆盖音频合成导入、播报控制导入/新增、控制配置新增、播报音频上传异常、SDK 发布和可选 3021 烧录。
 - V4.0.5 完成审计必须补充逐需求报告，参考 `artifacts/platform-validation/20260528-v405-completion-audit/v405_completion_audit.md`；深定制要至少覆盖全词条打包、词条子集打包、深度调优保存/打包，并明确产物是否真的体现调优参数。
-- V4.0.5 当前已知风险：菜单/页面文案未完全改名，WAV bit depth 与 MP3 码率校验放行，深度调优阈值保存后未落入下载产物，3021 设备运行态未拿到串口/协议证据。
+- V4.0.5 当前已知风险：菜单/页面文案未完全改名；WAV bit depth 与 MP3 码率直连接口校验放行但缺少浏览器 UI 复核证据；深度调优阈值保存后未落入下载产物；3021 设备运行态需日志/协议/播报证据。
 - 音频合成导入表必须覆盖：空表、缺列、空字段、仅空格、序号非数字、重复音频名/序号、非法文件名字符、音频名长度、单条文本长度、导入行数、损坏 xlsx、csv 后缀。
 - 播报合成导入表必须覆盖：合法 1/10 行、50/100/200/500 行、播报内容长度、音频描述长度、仅空格、重复音频描述、重复接收协议；音频文件格式异常仍由 `batch_import_negative.py` 覆盖。
 - 试听合成边界必须覆盖：空文本、长文本、语速/音量 `1/100` 边界与 `0/101/负数/999` 越界、非法发音人。

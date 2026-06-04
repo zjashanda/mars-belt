@@ -1,0 +1,1296 @@
+{
+  "schema": "orion.skilltest.v1",
+  "skill_id": "mars-belt",
+  "name": "Mars Belt Platform Validation",
+  "summary": "MarsPlatform 固件打包、合成管理、平台接口、语音注册、多唤醒、设备烧录与运行态验证的模块化 SkillTest 资料。",
+  "version": "1.0.0",
+  "updated_at": "2026-06-04",
+  "flow": [
+    "选择 Agent 节点",
+    "配置平台 token / UI 登录态 / 设备串口声卡",
+    "选择一个或多个待测功能模块",
+    "读取产品支持矩阵并裁剪范围",
+    "生成测试方案和自然语言用例",
+    "测试人员确认用例、副作用和风险等级",
+    "执行平台打包/UI/API/设备验证",
+    "归档证据、报告和可复测数据"
+  ],
+  "call_method": "python3 scripts/mars_belt.py <command> ...; PYTHONPATH=scripts/py python3 -m synthesis_management.validation --publish-broadcast; python3 scripts/py/listenai_platform_api_validation.py",
+  "required_config": [
+    "目标 Agent 在线且可访问 MarsPlatform",
+    "TOOLS.md 中存在有效 LISTENAI_TOKEN；UI-only 用例需要有效浏览器登录态",
+    "目标产品/模块/语言/版本或待测 release 信息",
+    "execute 设备用例前确认控制串口、日志串口、协议串口、烧录口和播放声卡",
+    "设备用例执行前确认供电、boot 线和烧录风险；当前 3021 台架默认 boot 使用 uut-switch3",
+    "所有写入平台数据默认使用 AUTO_TEST_* 或自动测试* 前缀并在结束时清理"
+  ],
+  "generation": {
+    "mode": "server-llm",
+    "planner": "codex",
+    "prompt": "根据选中 MarsPlatform 功能模块、目标产品支持矩阵、用户补充需求、设备配置和历史验证经验，生成测试方案与自然语言测试用例。必须区分 browser_ui、ui_equivalent_api、api_probe、device_evidence，并按产品能力裁剪 Unsupported 功能。",
+    "output_schema": "orion.skilltest.plan.v1",
+    "artifacts": [
+      "plan.json",
+      "cases.json",
+      "cases.md",
+      "execution_report.md",
+      "evidence_index.json"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "platform_catalog_scope_precheck",
+      "module": "platform_discovery",
+      "name": "平台支持矩阵与范围裁剪",
+      "summary": "查询 MarsPlatform 当前产品、模块、语言、版本和功能支持矩阵，生成后续测试范围。",
+      "requirement": "开始打包或专项验证前，必须确认目标产品能力，避免对 Unsupported 功能强测。",
+      "logic": "调用 list-catalog / build-case-catalog，读取产品可选矩阵、参数目录和 feature gate，只对 Supported、Optional 或 directly_editable 的功能生成测试计划。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "dry-run",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py list-catalog; scripts/mars_belt.py build-case-catalog",
+      "requires": [
+        "有效 LISTENAI_TOKEN",
+        "目标产品/模块/语言/版本信息",
+        "网络可访问 MarsPlatform"
+      ],
+      "side_effects": [
+        "读取平台目录",
+        "在 artifacts 下生成能力矩阵和参数目录"
+      ],
+      "risk_level": "low",
+      "test_cases": [
+        {
+          "id": "catalog_live_matrix",
+          "title": "实时支持矩阵读取",
+          "objective": "确认平台可返回当前账号可选的产品、模块、语言、版本和基础配置入口。",
+          "preconditions": [
+            "TOOLS.md 中存在有效 LISTENAI_TOKEN",
+            "平台服务可访问"
+          ],
+          "steps": [
+            "执行 list-catalog 读取实时可选矩阵。",
+            "校验目标产品、模块、语言、版本存在。",
+            "保存 catalog 和查询日志。"
+          ],
+          "expected_results": [
+            "目标组合可被唯一定位。",
+            "无 token 明文写入报告。",
+            "目录文件写入 artifacts。"
+          ],
+          "evidence": [
+            "catalog JSON",
+            "命令日志",
+            "范围裁剪说明"
+          ],
+          "pass_criteria": "目标组合存在且矩阵字段完整。",
+          "fail_criteria": "token 无效、目标组合不存在或目录接口异常。",
+          "blocked_conditions": [
+            "平台账号无权限",
+            "目标产品未上架",
+            "网络不可用"
+          ],
+          "estimated_minutes": 3
+        },
+        {
+          "id": "scope_trim_by_feature_gate",
+          "title": "按功能支持状态裁剪测试范围",
+          "objective": "确认只对当前产品支持或可直接编辑的功能生成专项，不把不支持能力写成失败。",
+          "preconditions": [
+            "已读取当前产品参数目录",
+            "存在 feature map 或等价参数目录"
+          ],
+          "steps": [
+            "生成参数测试目录。",
+            "按 Supported/Optional/directly_editable 分类功能点。",
+            "标记 Unsupported 为不执行/不纳入失败。"
+          ],
+          "expected_results": [
+            "输出可测/不可测/只观察功能清单。",
+            "后续打包矩阵只覆盖可测功能。"
+          ],
+          "evidence": [
+            "parameter_catalog.json",
+            "feature_matrix.md",
+            "scope report"
+          ],
+          "pass_criteria": "不可测项被明确跳过，可测项进入方案。",
+          "fail_criteria": "对 Unsupported 功能生成执行用例或把不支持误判为失败。",
+          "blocked_conditions": [
+            "参数目录缺失",
+            "平台返回字段变更"
+          ],
+          "estimated_minutes": 5
+        }
+      ]
+    },
+    {
+      "id": "firmware_package_matrix",
+      "module": "firmware_packaging",
+      "name": "固件打包矩阵",
+      "summary": "按最少包覆盖最多参数的原则执行基础包、边界包、分组包和控制变量包。",
+      "requirement": "验证平台配置能正确保存、打包、下载，并生成可供设备验证的固件/SDK 产物。",
+      "logic": "使用 package-custom、package-weekly、package-batch、package-grouped 生成不同配置包，静态校验 zip 内 web_config/cfg 参数并记录版本、配置和下载产物。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py package-custom|package-weekly|package-batch|package-grouped",
+      "requires": [
+        "有效 LISTENAI_TOKEN",
+        "目标产品支持矩阵",
+        "打包参数矩阵",
+        "平台打包服务可用"
+      ],
+      "side_effects": [
+        "在平台创建受控 release/打包任务",
+        "下载固件 zip",
+        "可能触发平台排队构建"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "package_base_mid_stable",
+          "title": "基础中值稳定包打包",
+          "objective": "确认目标产品默认/中值配置可以成功保存、打包并下载。",
+          "preconditions": [
+            "目标产品组合通过预检查",
+            "平台打包队列可用"
+          ],
+          "steps": [
+            "创建或复用受控 release。",
+            "使用中值参数发起打包。",
+            "轮询任务到成功。",
+            "下载 zip 并静态检查配置文件。"
+          ],
+          "expected_results": [
+            "打包成功。",
+            "zip 可解压。",
+            "关键配置与预期一致。"
+          ],
+          "evidence": [
+            "打包日志",
+            "固件 zip",
+            "配置断言 JSON",
+            "Markdown 报告"
+          ],
+          "pass_criteria": "打包成功且配置断言通过。",
+          "fail_criteria": "打包失败、下载失败、zip 损坏或配置未入包。",
+          "blocked_conditions": [
+            "token 无效",
+            "平台构建队列超时",
+            "产品组合不存在"
+          ],
+          "estimated_minutes": 15
+        },
+        {
+          "id": "package_boundary_matrix",
+          "title": "配置边界包打包",
+          "objective": "用低/中/高或左右边界覆盖唤醒时长、音量档位、默认音量、日志级别、串口波特率等参数。",
+          "preconditions": [
+            "已有参数目录和取值范围",
+            "已明确哪些参数可直接编辑"
+          ],
+          "steps": [
+            "按最少包数设计边界组合。",
+            "逐包发起打包并下载。",
+            "检查每包变更点和未变更项。",
+            "生成功能覆盖矩阵。"
+          ],
+          "expected_results": [
+            "每个可测参数至少覆盖有效边界。",
+            "组合包未出现系统性打包失败。"
+          ],
+          "evidence": [
+            "variant manifest",
+            "featureSummary",
+            "config assertion",
+            "downloaded zip"
+          ],
+          "pass_criteria": "所有计划包成功或有明确阻塞归因。",
+          "fail_criteria": "参数未入包、组合包失败且无法归因、重复打包污染结果。",
+          "blocked_conditions": [
+            "参数互斥关系不明",
+            "平台配置项被下线"
+          ],
+          "estimated_minutes": 40
+        },
+        {
+          "id": "package_control_variable_rerun",
+          "title": "失败项控制变量复测",
+          "objective": "当组合包出现 FAIL/BLOCK 时，只保留问题点和最小依赖重新打包验证。",
+          "preconditions": [
+            "已有失败组合包证据",
+            "已识别疑似参数或依赖组"
+          ],
+          "steps": [
+            "将其他参数恢复默认。",
+            "构造单参数或最小依赖包。",
+            "重新打包、下载和断言。",
+            "对比原失败包与控制变量包。"
+          ],
+          "expected_results": [
+            "能证明失败属于参数本身、依赖组合或非功能阻塞。",
+            "报告不靠猜测归因。"
+          ],
+          "evidence": [
+            "control package manifest",
+            "before/after comparison",
+            "rerun report"
+          ],
+          "pass_criteria": "控制变量包给出可复现或可排除结论。",
+          "fail_criteria": "未复测就归因，或控制变量包仍混入无关变更。",
+          "blocked_conditions": [
+            "平台打包不可用",
+            "缺少原失败证据"
+          ],
+          "estimated_minutes": 30
+        }
+      ]
+    },
+    {
+      "id": "device_burn_runtime_validation",
+      "module": "device_runtime",
+      "name": "设备烧录与运行态验证",
+      "summary": "把平台产物烧录到本地设备，验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
+      "requirement": "证明固件不仅能打包，还能在目标设备上稳定启动并按配置工作。",
+      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按控制口 boot 四步烧录；烧录后执行 generate-suite/validate，采集日志、协议、音频和报告证据。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "dry-run",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py burn; scripts/mars_belt.py generate-suite; scripts/mars_belt.py validate",
+      "requires": [
+        "目标固件 zip 或 fw.bin",
+        "控制串口",
+        "烧录串口",
+        "日志串口",
+        "协议串口",
+        "播放声卡",
+        "设备供电/boot 线正常"
+      ],
+      "side_effects": [
+        "设备上下电",
+        "进入 boot",
+        "擦写固件",
+        "播放测试音频",
+        "发送串口协议"
+      ],
+      "risk_level": "high",
+      "test_cases": [
+        {
+          "id": "burn_staged_app_bin",
+          "title": "固定暂存烧录流程验证",
+          "objective": "确认待测固件按固定 app.bin 暂存流程烧录成功，避免直接烧任意外部路径。",
+          "preconditions": [
+            "烧录工具存在",
+            "控制口和 burn 口可用",
+            "boot 线已确认"
+          ],
+          "steps": [
+            "清空 scripts/burn/app.bin。",
+            "从 zip 提取或复制目标固件到 app.bin。",
+            "执行下电、进 boot、上电、出 boot。",
+            "调用 Uart_Burn_Tool 烧录 app.bin。",
+            "恢复上电。"
+          ],
+          "expected_results": [
+            "烧录日志包含 ROM loader、MD5、END 成功标记。",
+            "控制命令全部 OK。"
+          ],
+          "evidence": [
+            "burn.log",
+            "burn tool log",
+            "control serial log"
+          ],
+          "pass_criteria": "烧录成功标记完整且恢复上电。",
+          "fail_criteria": "ROM 握手失败、控制命令失败、烧录后设备不可恢复。",
+          "blocked_conditions": [
+            "串口被占用",
+            "boot 线异常",
+            "设备未接电"
+          ],
+          "estimated_minutes": 8
+        },
+        {
+          "id": "runtime_suite_validation",
+          "title": "固件运行态 suite 验证",
+          "objective": "确认烧录后的固件能完成预处理、配置断言和基础功能验证。",
+          "preconditions": [
+            "设备已烧录目标固件",
+            "日志/协议/声卡链路可用"
+          ],
+          "steps": [
+            "生成 suite 和 deviceInfo。",
+            "执行预处理：上电、等待启动、设置 loglevel、等待识别就绪。",
+            "执行配置断言和基础功能用例。",
+            "记录重启、协议异常和识别结果。"
+          ],
+          "expected_results": [
+            "设备启动日志和版本可见。",
+            "关键配置与包内配置一致。",
+            "唤醒/命令/协议/播报按预期工作。"
+          ],
+          "evidence": [
+            "suite result",
+            "串口日志",
+            "协议日志",
+            "case CSV",
+            "Markdown 报告"
+          ],
+          "pass_criteria": "所有必测项 PASS，或不可测项有明确 BLOCK 证据。",
+          "fail_criteria": "预处理失败、配置不一致、无唤醒/无协议响应、非预期重启。",
+          "blocked_conditions": [
+            "日志串口异常",
+            "声卡不可用",
+            "设备不支持当前功能"
+          ],
+          "estimated_minutes": 30
+        }
+      ]
+    },
+    {
+      "id": "voice_registration_validation",
+      "module": "voice_reg",
+      "name": "语音注册专项",
+      "summary": "验证命令词/唤醒词学习、重试、重复次数、删除、容量、边界和不同学习模式。",
+      "requirement": "只在产品支持语音注册时执行，证明学习成功后可用、删除后失效、失败后不污染默认能力。",
+      "logic": "根据 releaseRegist 配置生成专项包和 VOICE-* suite，等待提示播报结束后播放注册语料，按日志、播报、协议和回测结果判定。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py package-voice-reg; scripts/mars_belt.py generate-suite; scripts/mars_belt.py validate",
+      "requires": [
+        "产品 voice_regist 支持",
+        "语音注册配置",
+        "日志/协议串口",
+        "播放声卡",
+        "平台支持命令词/唤醒词语料"
+      ],
+      "side_effects": [
+        "烧录固件",
+        "学习/删除设备本地语音模板",
+        "播放语料",
+        "可能修改掉电保存区"
+      ],
+      "risk_level": "high",
+      "test_cases": [
+        {
+          "id": "voice_reg_specific_learn_success",
+          "title": "指定学习正例闭环",
+          "objective": "确认指定学习模式下命令词/唤醒词能按 repeatCount 学习成功并回测可用。",
+          "preconditions": [
+            "固件开启语音注册",
+            "模板容量未满或已清理",
+            "播报链路稳定"
+          ],
+          "steps": [
+            "唤醒设备并进入学习入口。",
+            "等待提示播报结束。",
+            "按配置说出待学习的命令词或唤醒词。",
+            "完成 N 次学习。",
+            "回测学习词可触发目标功能。"
+          ],
+          "expected_results": [
+            "学习流程进入正确阶段。",
+            "第 N 次后成功。",
+            "学习词可用，默认能力不被破坏。"
+          ],
+          "evidence": [
+            "VOICE suite result",
+            "串口日志",
+            "播报/协议证据",
+            "回测结果"
+          ],
+          "pass_criteria": "学习成功且回测可用。",
+          "fail_criteria": "未进入学习、长度/模板错误、学习成功但回测不可用、设备重启。",
+          "blocked_conditions": [
+            "声卡不可用",
+            "模板已满",
+            "产品未开启语音注册"
+          ],
+          "estimated_minutes": 20
+        },
+        {
+          "id": "voice_reg_retry_and_failure",
+          "title": "重试次数与失败分支验证",
+          "objective": "确认 retryCount=1 和 retryCount>1 下失败语义正确，失败词不会被误学习。",
+          "preconditions": [
+            "已读取 commandRetryCount/wakeupRetryCount",
+            "准备正例和负例语料"
+          ],
+          "steps": [
+            "进入学习态后输入不匹配或超边界语料。",
+            "观察是否按 retryCount 提示重试或退出。",
+            "在可重试场景输入正确语料恢复。",
+            "回测失败词不可用、默认词仍可用。"
+          ],
+          "expected_results": [
+            "retryCount=1 时首次失败即退出。",
+            "retryCount>1 时允许重试并按终态判定。"
+          ],
+          "evidence": [
+            "VOICE-003/004/005/006 结果",
+            "阶段日志",
+            "回测日志"
+          ],
+          "pass_criteria": "失败/恢复行为与配置一致。",
+          "fail_criteria": "重试次数错误、失败词被学习、默认能力被破坏。",
+          "blocked_conditions": [
+            "无法稳定进入学习态",
+            "负例词误触发真实功能"
+          ],
+          "estimated_minutes": 20
+        },
+        {
+          "id": "voice_reg_delete_and_capacity",
+          "title": "删除与容量上限闭环",
+          "objective": "确认删除命令词/唤醒词后学习词失效，模板满时能提示且删除后可继续学习。",
+          "preconditions": [
+            "已至少学习成功一个词",
+            "删除控制词存在",
+            "模板容量配置可读"
+          ],
+          "steps": [
+            "回测学习词可用。",
+            "执行删除命令词或删除唤醒词流程。",
+            "删除后回测学习词不可用。",
+            "模板满场景先确认满，再删除后重新学习。"
+          ],
+          "expected_results": [
+            "删除播报/状态正确。",
+            "删除后学习词失效。",
+            "默认能力仍正常。"
+          ],
+          "evidence": [
+            "删除流程日志",
+            "回测结果",
+            "配置保存日志"
+          ],
+          "pass_criteria": "删除闭环和容量恢复行为符合配置。",
+          "fail_criteria": "删除后仍可用、默认能力异常、模板状态错误。",
+          "blocked_conditions": [
+            "当前固件无删除入口",
+            "模板状态无法复位"
+          ],
+          "estimated_minutes": 25
+        }
+      ]
+    },
+    {
+      "id": "multi_wakeup_validation",
+      "module": "wake",
+      "name": "多唤醒与唤醒词掉电保存",
+      "summary": "验证多个唤醒词的新增、切换、查询、恢复默认和掉电保存行为。",
+      "requirement": "只在产品支持多唤醒时执行，确认当前词/非当前词、生效和掉电保持逻辑正确。",
+      "logic": "打包含额外唤醒词的固件，烧录后按唤醒/切换/查询/恢复默认/断电重启路径验证当前唤醒词状态。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py package-grouped; scripts/mars_belt.py validate",
+      "requires": [
+        "产品 multi_wakeup 支持",
+        "至少 2 个额外唤醒词",
+        "播放声卡",
+        "日志串口"
+      ],
+      "side_effects": [
+        "烧录固件",
+        "切换设备当前唤醒词",
+        "断电重启"
+      ],
+      "risk_level": "high",
+      "test_cases": [
+        {
+          "id": "multi_wakeup_switch_query_restore",
+          "title": "多唤醒切换/查询/恢复默认",
+          "objective": "确认默认词和新增词能按配置切换，查询结果与当前词一致，恢复默认后非当前词不能继续唤醒。",
+          "preconditions": [
+            "固件包含默认词和至少两个新增唤醒词",
+            "设备可被默认词唤醒"
+          ],
+          "steps": [
+            "用默认词唤醒。",
+            "切换到目标新增唤醒词。",
+            "查询当前唤醒词。",
+            "用目标词唤醒并用非当前词做反向验证。",
+            "恢复默认词并再次验证。"
+          ],
+          "expected_results": [
+            "切换/查询/恢复播报正确。",
+            "当前词可唤醒，非当前词不可唤醒。"
+          ],
+          "evidence": [
+            "唤醒日志",
+            "切换/查询结果",
+            "反向验证记录"
+          ],
+          "pass_criteria": "所有状态转移和回测符合预期。",
+          "fail_criteria": "切换不生效、查询错误、非当前词仍可唤醒或默认词失效。",
+          "blocked_conditions": [
+            "产品未支持多唤醒",
+            "新增唤醒词打包失败"
+          ],
+          "estimated_minutes": 18
+        },
+        {
+          "id": "wake_word_save_power_cycle",
+          "title": "唤醒词掉电保存验证",
+          "objective": "确认 wakeWordSave=true/false 下断电后当前唤醒词保持或恢复默认。",
+          "preconditions": [
+            "已完成一次切换",
+            "控制口可上下电"
+          ],
+          "steps": [
+            "切换到新增唤醒词。",
+            "断电重启设备。",
+            "读取或查询当前唤醒词。",
+            "分别用新增词和默认词验证。"
+          ],
+          "expected_results": [
+            "保存开启时保持新增词。",
+            "保存关闭时恢复默认词。"
+          ],
+          "evidence": [
+            "上下电控制日志",
+            "启动日志",
+            "唤醒回测结果"
+          ],
+          "pass_criteria": "掉电后状态与 wakeWordSave 配置一致。",
+          "fail_criteria": "状态丢失、状态未恢复默认或设备重启异常。",
+          "blocked_conditions": [
+            "控制口不可用",
+            "唤醒状态无法查询"
+          ],
+          "estimated_minutes": 15
+        }
+      ]
+    },
+    {
+      "id": "volume_audio_runtime_validation",
+      "module": "audio_runtime",
+      "name": "音量、播报参数与功放运行态",
+      "summary": "验证音量档位、默认音量、音量掉电保存、最大/最小边界播报、TTS 参数和 PA 开关稳定性。",
+      "requirement": "证明音频相关配置不会只停留在包内字段，而是在设备运行态表现正确或至少不破坏基础链路。",
+      "logic": "打包不同音量/TTS/压缩比/PA 组合，烧录后主动探测音量档位、执行边界播报、断电重启比对配置，并观察重启/卡死。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py package-weekly; scripts/probe_volume_levels.py; scripts/mars_belt.py validate",
+      "requires": [
+        "支持音量/播报相关配置",
+        "日志串口",
+        "协议串口",
+        "播放声卡或可听播报",
+        "控制口"
+      ],
+      "side_effects": [
+        "烧录固件",
+        "调节音量",
+        "播放播报",
+        "设备断电重启"
+      ],
+      "risk_level": "high",
+      "test_cases": [
+        {
+          "id": "volume_level_probe",
+          "title": "真实音量档位探测",
+          "objective": "确认设备实际音量档位数与 volLevel 配置一致。",
+          "preconditions": [
+            "设备已烧录目标 volLevel 包",
+            "协议或语音音量控制可用"
+          ],
+          "steps": [
+            "从默认音量开始连续增大/减小音量。",
+            "记录每次播报、协议和日志变化。",
+            "统计可达档位数并与配置比较。"
+          ],
+          "expected_results": [
+            "档位数与配置一致。",
+            "最大/最小边界有正确播报或稳定表现。"
+          ],
+          "evidence": [
+            "volume probe JSON",
+            "串口日志",
+            "音量边界报告"
+          ],
+          "pass_criteria": "档位数、边界和播报链路均符合预期。",
+          "fail_criteria": "档位数不符、边界异常、音量操作导致重启。",
+          "blocked_conditions": [
+            "音量协议不可用",
+            "播报不可观测"
+          ],
+          "estimated_minutes": 12
+        },
+        {
+          "id": "default_volume_and_persistence",
+          "title": "默认音量和音量掉电保存",
+          "objective": "确认 defaultVol 初始值正确，volSave 配置决定断电后音量是否保持。",
+          "preconditions": [
+            "设备刚烧录或已恢复干净状态",
+            "控制口可断电重启"
+          ],
+          "steps": [
+            "启动后第一时间查询/探测当前音量。",
+            "调到非默认音量。",
+            "断电重启。",
+            "重启后再次查询/探测音量。"
+          ],
+          "expected_results": [
+            "初始音量等于 defaultVol。",
+            "volSave=true 保持修改值，false 恢复默认。"
+          ],
+          "evidence": [
+            "启动日志",
+            "音量操作日志",
+            "上下电日志"
+          ],
+          "pass_criteria": "默认音量和掉电保存均符合配置。",
+          "fail_criteria": "初始值错误、保存行为错误或断电后设备异常。",
+          "blocked_conditions": [
+            "无法查询音量",
+            "电源控制异常"
+          ],
+          "estimated_minutes": 15
+        },
+        {
+          "id": "tts_pa_stability",
+          "title": "TTS/压缩比/功放稳定性",
+          "objective": "确认合成发音人、语速、音量、压缩比、PA 配置不会导致打包失败、启动失败或播报链路异常。",
+          "preconditions": [
+            "目标参数可编辑",
+            "已选平台支持的发音人/压缩比"
+          ],
+          "steps": [
+            "打包 TTS/压缩比/PA 参数组合。",
+            "静态校验配置入包。",
+            "烧录后触发播报和识别。",
+            "观察重启、卡死、无声或 PA 异常。"
+          ],
+          "expected_results": [
+            "配置入包。",
+            "设备可启动、播报、识别。",
+            "无非预期重启。"
+          ],
+          "evidence": [
+            "配置断言",
+            "启动日志",
+            "播报日志",
+            "识别结果"
+          ],
+          "pass_criteria": "不引入打包或运行态异常。",
+          "fail_criteria": "打包失败、启动异常、播报链路断裂或设备重启。",
+          "blocked_conditions": [
+            "无法自动判断音色",
+            "PA 线未连接"
+          ],
+          "estimated_minutes": 20
+        }
+      ]
+    },
+    {
+      "id": "uart_protocol_log_validation",
+      "module": "uart_protocol",
+      "name": "协议串口、日志级别与协议功能",
+      "summary": "验证协议串口波特率、日志级别、协议收发和日志可观测性。",
+      "requirement": "确保脚本侧串口配置与固件配置一致，协议帧能被设备接收并产生预期日志或播报。",
+      "logic": "打包 uportBaud/logLevel 等配置，烧录后同步脚本波特率发送协议帧，采集 [RX]、PA_MGR、mini-player、配置保存等日志。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/mars_belt.py package-custom; scripts/mars_belt.py validate",
+      "requires": [
+        "日志串口",
+        "协议串口",
+        "协议帧样本",
+        "目标包串口配置"
+      ],
+      "side_effects": [
+        "烧录固件",
+        "发送协议帧",
+        "修改设备音量/播报状态"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "protocol_baud_sync",
+          "title": "协议波特率同步验证",
+          "objective": "确认 uportBaud 配置后，脚本使用相同波特率发送协议能被设备接收。",
+          "preconditions": [
+            "包内 uart_config 可读",
+            "协议口物理映射确认"
+          ],
+          "steps": [
+            "读取包内协议波特率。",
+            "使用该波特率打开协议口。",
+            "发送有效协议帧。",
+            "在日志口采集 [RX] 和功能执行 marker。"
+          ],
+          "expected_results": [
+            "日志出现协议 RX。",
+            "对应功能执行，例如音量/播报变化。"
+          ],
+          "evidence": [
+            "protocol send log",
+            "runtime serial log",
+            "cfg.json/web_config.json"
+          ],
+          "pass_criteria": "协议帧被接收且功能生效。",
+          "fail_criteria": "波特率不通、无 RX、功能不执行或设备异常。",
+          "blocked_conditions": [
+            "协议口异常",
+            "日志口不可观测"
+          ],
+          "estimated_minutes": 8
+        },
+        {
+          "id": "log_level_runtime_observation",
+          "title": "日志级别运行态验证",
+          "objective": "确认低/高日志级别配置下设备仍可启动和运行，并按预期输出或抑制日志。",
+          "preconditions": [
+            "目标 logLevel 包已生成",
+            "日志口可读"
+          ],
+          "steps": [
+            "烧录不同 logLevel 包。",
+            "抓取启动日志和运行日志。",
+            "发送基础协议或播放唤醒音频。",
+            "比较日志丰富度和运行稳定性。"
+          ],
+          "expected_results": [
+            "设备启动正常。",
+            "日志级别表现与配置一致。",
+            "功能链路不受影响。"
+          ],
+          "evidence": [
+            "boot log",
+            "runtime log",
+            "log level comparison"
+          ],
+          "pass_criteria": "日志级别配置可观测且不破坏功能。",
+          "fail_criteria": "日志完全不可用、设备卡死或功能异常。",
+          "blocked_conditions": [
+            "日志 UART 未接出",
+            "固件关闭日志输出"
+          ],
+          "estimated_minutes": 10
+        }
+      ]
+    },
+    {
+      "id": "synthesis_management_fullchain",
+      "module": "synthesis_management",
+      "name": "合成管理全链路",
+      "summary": "验证音频合成、播报合成和自定义音频的正常业务闭环。",
+      "requirement": "像固件打包一样覆盖每个合成管理功能点，证明平台可正常创建、编辑、合成、发布、下载和清理。",
+      "logic": "执行 synthesis_management.validation，创建 AUTO_TEST_* 临时数据，覆盖模板下载、试听、导入、产物合成、播报版本、SDK 发布和 zip 下载，最后清理。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/py/listenai_synthesis_validation.py --publish-broadcast",
+      "requires": [
+        "有效 LISTENAI_TOKEN",
+        "合成管理菜单权限",
+        "平台字典发音人/压缩比",
+        "网络下载能力"
+      ],
+      "side_effects": [
+        "创建 AUTO_TEST_* 音频合成项目",
+        "上传自定义音频",
+        "创建播报产品和版本",
+        "发布 SDK",
+        "默认清理临时数据"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "audio_synthesis_business_fullchain",
+          "title": "音频合成业务闭环",
+          "objective": "验证音频合成项目从模板、试听、导入、保存到产物下载的完整链路。",
+          "preconditions": [
+            "合成管理/音频合成菜单可用",
+            "发音人和压缩比字典可用"
+          ],
+          "steps": [
+            "下载音频合成模板。",
+            "创建 AUTO_TEST_SYNTH 项目。",
+            "执行试听。",
+            "导入合法 Excel。",
+            "保存草稿并提交合成。",
+            "查看产物详情并下载 zip。",
+            "清理产物和项目。"
+          ],
+          "expected_results": [
+            "所有接口和页面记录正常。",
+            "zip 可解压。",
+            "临时数据被清理。"
+          ],
+          "evidence": [
+            "synthesis_validation_result.json",
+            "下载模板",
+            "合成 zip",
+            "清理日志"
+          ],
+          "pass_criteria": "音频合成所有步骤 PASS 且无残留。",
+          "fail_criteria": "模板/试听/导入/合成/下载/清理任一步失败。",
+          "blocked_conditions": [
+            "无菜单权限",
+            "发音人字典为空",
+            "合成服务排队超时"
+          ],
+          "estimated_minutes": 20
+        },
+        {
+          "id": "broadcast_synthesis_sdk_publish",
+          "title": "播报合成 SDK 发布闭环",
+          "objective": "验证播报产品、播报版本、协议行、SDK 发布、SDK 下载和版本清理。",
+          "preconditions": [
+            "播报合成菜单可用",
+            "芯片/版本 options 可用"
+          ],
+          "steps": [
+            "创建 AUTO_TEST_BROADCAST 产品。",
+            "创建自动播报或协议播报版本。",
+            "编辑/复制/查询版本。",
+            "发布 SDK 并轮询 success。",
+            "下载 SDK zip 并检查 fw.bin/cfg.json/ring_cfg.json。",
+            "删除版本和产品。"
+          ],
+          "expected_results": [
+            "发布状态 success。",
+            "SDK zip 结构完整。",
+            "临时产品清理完成。"
+          ],
+          "evidence": [
+            "SDK zip",
+            "publish polling log",
+            "zip manifest",
+            "清理日志"
+          ],
+          "pass_criteria": "播报版本发布成功且 SDK 可下载解压。",
+          "fail_criteria": "SDK 发布失败、状态未成功、zip 缺关键文件或清理失败。",
+          "blocked_conditions": [
+            "平台发布队列超时",
+            "芯片/版本选项为空"
+          ],
+          "estimated_minutes": 30
+        },
+        {
+          "id": "custom_audio_business_fullchain",
+          "title": "我的自定义音频正常闭环",
+          "objective": "验证自定义音频上传、查询、编辑、下载、批量导入和删除。",
+          "preconditions": [
+            "自定义音频菜单可用",
+            "准备合法 WAV/MP3 和导入表"
+          ],
+          "steps": [
+            "上传合法音频。",
+            "查询列表并编辑备注。",
+            "下载音频并校验内容。",
+            "执行 Excel+目录批量导入。",
+            "删除临时音频。"
+          ],
+          "expected_results": [
+            "上传/下载/导入/删除成功。",
+            "列表无 AUTO_TEST 残留。"
+          ],
+          "evidence": [
+            "上传记录",
+            "下载音频",
+            "批量导入结果",
+            "清理报告"
+          ],
+          "pass_criteria": "自定义音频全链路 PASS 且清理成功。",
+          "fail_criteria": "上传失败、下载损坏、导入异常或记录残留。",
+          "blocked_conditions": [
+            "上传组件不可用",
+            "账号无删除权限"
+          ],
+          "estimated_minutes": 15
+        }
+      ]
+    },
+    {
+      "id": "synthesis_import_upload_boundary_ui",
+      "module": "synthesis_management_ui",
+      "name": "合成管理 UI 上传/导入异常与边界",
+      "summary": "通过真实浏览器 UI 或人工 UI 路径验证音频上传、播报批量导入和表格导入异常兜底。",
+      "requirement": "异常音频、异常 xlsx、上限边界必须走 UI 文件选择/目录选择触发，不能把直连接口探测混入 UI 主结论。",
+      "logic": "使用浏览器选择文件或目录，观察前端过滤、预览、错误提示、保存按钮和网络事件；结果按 browser_ui、frontend_model、ui_equivalent_api、api_probe 分级。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "dry-run",
+      "runner": "agent_shell",
+      "task": "scripts/py/synthesis_management/import_boundary_validation.py; scripts/py/synthesis_management/batch_import_negative.py; artifacts/manual-validation/20260531-ui-audio-import-recheck/README.md",
+      "requires": [
+        "有效 UI 登录态或 token",
+        "浏览器环境",
+        "异常音频/表格 fixtures",
+        "合成管理菜单权限"
+      ],
+      "side_effects": [
+        "浏览器上传测试文件",
+        "可能创建临时播报版本或音频产物",
+        "可能保留记录用于人工复核"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "ui_custom_audio_format_validation",
+          "title": "自定义音频格式 UI 校验",
+          "objective": "确认页面声明的大小、采样率、bit depth、声道、MP3 码率在 UI 上传组件中被正确执行。",
+          "preconditions": [
+            "浏览器 UI 登录有效",
+            "准备合法与异常 MP3/WAV 文件"
+          ],
+          "steps": [
+            "进入我的自定义音频。",
+            "逐个通过文件选择器选择合法、超大小、采样率、声道、8bit/24bit、64kbps、损坏/空文件。",
+            "记录页面提示、校验结果和保存状态。"
+          ],
+          "expected_results": [
+            "合法文件通过。",
+            "超规格文件被拒绝且提示明确。",
+            "不会绕过 UI 直接提交后端。"
+          ],
+          "evidence": [
+            "截图",
+            "DOM 文本",
+            "浏览器网络事件",
+            "manual_recheck_cases.csv"
+          ],
+          "pass_criteria": "所有超规格文件被 UI 拦截，合法文件可保存。",
+          "fail_criteria": "UI 对超规格文件显示校验通过或允许保存。",
+          "blocked_conditions": [
+            "UI 登录失效",
+            "浏览器无法选择文件",
+            "页面规则已变更"
+          ],
+          "estimated_minutes": 25
+        },
+        {
+          "id": "ui_broadcast_batch_import_negative_matrix",
+          "title": "播报批量导入异常矩阵 UI 校验",
+          "objective": "确认批量导入目录中的 xlsx 列、字段、音频文件、协议和边界异常能被前端或保存前校验拦住。",
+          "preconditions": [
+            "播报合成版本编辑页可进入",
+            "准备 batch_dirs 目录数据"
+          ],
+          "steps": [
+            "进入播报控制批量导入。",
+            "选择合法目录做对照。",
+            "选择缺列、空字段、不匹配、重复协议、只传 xlsx、>20KB、32/48K、双声道、64kbps、wav/aac 后缀等目录。",
+            "观察是否生成预览、错误提示和保存按钮。"
+          ],
+          "expected_results": [
+            "合法目录可导入。",
+            "异常目录被明确拒绝。",
+            "错误信息能定位原因。"
+          ],
+          "evidence": [
+            "截图",
+            "DOM 文本",
+            "目录 fixtures",
+            "导入结果 JSON"
+          ],
+          "pass_criteria": "异常目录均被拦截且提示明确。",
+          "fail_criteria": "异常目录被接受、保存按钮可用或弹窗直接关闭为成功。",
+          "blocked_conditions": [
+            "版本编辑页入口变化",
+            "浏览器目录选择受限"
+          ],
+          "estimated_minutes": 40
+        },
+        {
+          "id": "ui_audio_synth_xlsx_import_negative",
+          "title": "音频合成导入表异常 UI 校验",
+          "objective": "确认音频合成 Excel 缺列、非法行、空文本、损坏文件和错误后缀的 UI 行为。",
+          "preconditions": [
+            "音频合成项目可创建",
+            "准备 xlsx/csv fixtures"
+          ],
+          "steps": [
+            "进入音频合成产物导入。",
+            "导入合法 xlsx 对照。",
+            "导入缺列、非法序号、非法文件名、空文本、损坏 xlsx、csv 后缀。",
+            "观察导入提示和表格预览。"
+          ],
+          "expected_results": [
+            "合法 xlsx 导入成功。",
+            "异常表格被拒绝或提示具体错误，不生成空白行。"
+          ],
+          "evidence": [
+            "截图",
+            "DOM 文本",
+            "导入表 fixtures",
+            "预览表格"
+          ],
+          "pass_criteria": "异常表格不被当成有效数据导入。",
+          "fail_criteria": "缺列/非法行被提示导入成功并生成空白行。",
+          "blocked_conditions": [
+            "项目创建失败",
+            "模板格式变更"
+          ],
+          "estimated_minutes": 20
+        }
+      ]
+    },
+    {
+      "id": "platform_api_business_validation",
+      "module": "platform_api",
+      "name": "平台业务接口受控验证",
+      "summary": "验证发音词典、协议模板、算法/补丁打包和固件关联读取等可安全落地接口。",
+      "requirement": "在不污染历史数据的前提下，覆盖平台 P0/P1 业务接口的新增、查询、导入、导出、配置读取和清理。",
+      "logic": "执行 platform_api_validation.validation，仅创建 AUTO_TEST_* 或自动测试* 受控数据；对历史 release 只读，不执行危险写入。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "scripts/py/listenai_platform_api_validation.py",
+      "requires": [
+        "有效 LISTENAI_TOKEN",
+        "平台接口权限",
+        "网络可访问"
+      ],
+      "side_effects": [
+        "创建并删除受控发音词典记录",
+        "创建并删除受控协议模板",
+        "下载模板/导出文件",
+        "读取 release 配置"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "pinyin_dictionary_crud_import_export",
+          "title": "发音词典 CRUD/导入/导出",
+          "objective": "验证我的发音词典分页、模板、中文分词、新增、详情、导出、TXT 导入和清理。",
+          "preconditions": [
+            "账号具备发音词典权限"
+          ],
+          "steps": [
+            "查询分页。",
+            "下载模板。",
+            "调用分词。",
+            "新增 AUTO_TEST 词条。",
+            "查看详情并导出。",
+            "执行 TXT 导入。",
+            "删除受控记录。"
+          ],
+          "expected_results": [
+            "各接口返回成功。",
+            "导出文件有效。",
+            "受控记录清理完成。"
+          ],
+          "evidence": [
+            "platform_api_validation_result.json",
+            "导出文件",
+            "清理日志"
+          ],
+          "pass_criteria": "全部受控操作成功且无残留。",
+          "fail_criteria": "新增/导入/导出失败或清理失败。",
+          "blocked_conditions": [
+            "账号无权限",
+            "接口字段变化"
+          ],
+          "estimated_minutes": 12
+        },
+        {
+          "id": "protocol_template_crud_refresh",
+          "title": "协议模板 CRUD 和字段刷新",
+          "objective": "验证协议模板分页、新增、详情、配置查询、字段刷新、记录查询和删除。",
+          "preconditions": [
+            "账号具备协议模板权限"
+          ],
+          "steps": [
+            "查询协议模板。",
+            "新增自动测试协议模板。",
+            "读取详情和 configs。",
+            "刷新协议字段。",
+            "查询 records。",
+            "删除受控模板。"
+          ],
+          "expected_results": [
+            "协议字段可读取和刷新。",
+            "受控模板可删除。"
+          ],
+          "evidence": [
+            "接口响应 JSON",
+            "协议字段 diff",
+            "清理日志"
+          ],
+          "pass_criteria": "协议模板链路完整且无残留。",
+          "fail_criteria": "新增/刷新/删除失败或字段异常。",
+          "blocked_conditions": [
+            "协议模板功能未授权"
+          ],
+          "estimated_minutes": 10
+        },
+        {
+          "id": "release_algo_read_and_template",
+          "title": "算法/补丁打包只读与模板验证",
+          "objective": "验证算法词条分页/详情、音频配置模板下载、模板导入解析、深度配置和关联固件配置读取。",
+          "preconditions": [
+            "存在可读 releaseAlgo 样本",
+            "不对历史共享记录执行写入"
+          ],
+          "steps": [
+            "查询 releaseAlgo 分页。",
+            "读取详情和 depthConfig。",
+            "下载 audioConfigTemplate。",
+            "导入模板解析。",
+            "读取关联 release detail 和 getAlgoConfig。"
+          ],
+          "expected_results": [
+            "只读接口成功。",
+            "模板可下载并可解析。",
+            "危险写入接口未触发。"
+          ],
+          "evidence": [
+            "API report",
+            "模板文件",
+            "配置读取 JSON"
+          ],
+          "pass_criteria": "安全只读和模板解析均通过。",
+          "fail_criteria": "接口异常、模板损坏或误写历史记录。",
+          "blocked_conditions": [
+            "无 releaseAlgo 样本",
+            "下载样本无产物"
+          ],
+          "estimated_minutes": 12
+        }
+      ]
+    },
+    {
+      "id": "v405_requirement_validation",
+      "module": "v405_requirements",
+      "name": "V4.0.5 需求专项",
+      "summary": "覆盖 V4.0.5 播报控制、控制配置、音频上传、SDK 发布和深定制保存打包需求。",
+      "requirement": "按需求文档逐项验证正例、反例、异常和边界，特别是播报合成音频上传和导入/新增场景。",
+      "logic": "结合 v405_validation、深定制打包脚本和 UI-only 证据，验证播报控制导入/新增、控制配置新增、音频异常上传、SDK 发布、算法词条子集和深度调优产物。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "dry-run",
+      "runner": "agent_shell",
+      "task": "scripts/py/synthesis_management/v405_validation.py; scripts/mars_belt.py package-custom",
+      "requires": [
+        "V4.0.5 需求文档",
+        "有效平台 token/UI 登录态",
+        "3021 产品样本",
+        "必要时本地设备"
+      ],
+      "side_effects": [
+        "创建播报/音频临时记录",
+        "发布 SDK",
+        "创建受控 3021 release",
+        "可选烧录设备"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "v405_broadcast_control_config",
+          "title": "播报控制与控制配置需求验证",
+          "objective": "验证播报控制导入/新增和控制配置新增的正例、反例、异常场景。",
+          "preconditions": [
+            "播报合成页面可用",
+            "控制配置入口可进入"
+          ],
+          "steps": [
+            "验证文本合成、本地 MP3、本地 WAV、混合导入。",
+            "验证新增播报控制行。",
+            "验证欢迎语和音量类控制配置新增。",
+            "覆盖空字段、非法协议、缺音频、重复功能类型。"
+          ],
+          "expected_results": [
+            "正例可保存或发布。",
+            "异常被 UI 拦截且提示明确。"
+          ],
+          "evidence": [
+            "需求审计报告",
+            "UI 截图",
+            "接口/网络证据"
+          ],
+          "pass_criteria": "需求项有明确 PASS/FAIL/SKIP 结论和证据。",
+          "fail_criteria": "异常被放行、正例不可用或证据口径不清。",
+          "blocked_conditions": [
+            "页面入口改名",
+            "账号无配置权限"
+          ],
+          "estimated_minutes": 45
+        },
+        {
+          "id": "v405_sdk_publish_and_deep_customization",
+          "title": "SDK 发布与深定制打包验证",
+          "objective": "验证播报 SDK 发布下载，以及算法全词条、词条子集和深度调优保存打包是否落入产物。",
+          "preconditions": [
+            "平台可创建受控 release",
+            "SDK 发布队列可用"
+          ],
+          "steps": [
+            "发布播报 SDK 并下载。",
+            "检查 SDK zip 关键文件。",
+            "创建 3021 受控 release。",
+            "保存全词条/子集/深度调优配置并打包。",
+            "下载产物检查配置是否体现修改。"
+          ],
+          "expected_results": [
+            "SDK 发布 success。",
+            "深定制配置可保存。",
+            "产物体现应有配置，未体现时作为风险上报。"
+          ],
+          "evidence": [
+            "SDK zip manifest",
+            "release zip",
+            "web_config/cfg diff",
+            "V4.0.5 报告"
+          ],
+          "pass_criteria": "发布和产物检查均有明确结论。",
+          "fail_criteria": "SDK 发布失败、产物缺文件、保存配置未落入产物。",
+          "blocked_conditions": [
+            "打包队列超时",
+            "源版本不支持对应功能"
+          ],
+          "estimated_minutes": 60
+        }
+      ]
+    }
+  ]
+}

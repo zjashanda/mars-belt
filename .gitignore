@@ -11,6 +11,7 @@ $SUITE_DIR/
 tmp_listenai_index-*.js
 
 scripts/burn/app.bin
+scripts/wavSource/.aplay_cache/
 scripts/wavSource/wavSource
 scripts/__pycache__/
 scripts/py/__pycache__/

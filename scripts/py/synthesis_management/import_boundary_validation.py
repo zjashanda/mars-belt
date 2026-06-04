@@ -4,6 +4,8 @@
 This suite complements the normal synthesis full-chain and broadcast batch
 negative matrix. It focuses on Excel/table import parsing, invalid fields, row
 count boundaries, text length boundaries, and direct preview synthesis bounds.
+It is API-driven unless the report explicitly says browser/manual UI evidence
+was collected.
 """
 from __future__ import annotations
 
@@ -453,6 +455,7 @@ def write_reports(out_dir: Path, results: List[Case], cleanup: Dict[str, Any]) -
         "",
         "## 汇总",
         "",
+        "- 口径：本脚本直接调用导入/合成接口，属于 UI 等价 API 或后端健壮性探测；严格 UI 结论需浏览器/人工 UI 触发证据。",
         f"- 总用例：{data['summary']['total']}",
         f"- 符合明确预期：{data['summary']['ok']}",
         f"- 预期拒绝但放行风险：{data['summary']['riskUnexpectedPass']}",

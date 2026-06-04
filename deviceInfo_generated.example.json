@@ -1,0 +1,20 @@
+{
+  "ttsConfig": {
+    "app_id": "",
+    "api_key": "",
+    "vcn": "x4_yezi",
+    "speed": "50",
+    "pitch": "50",
+    "volume": "100"
+  },
+  "deviceListInfo": {
+    "audioCard": {
+      "deviceKey": "VID_8765&PID_5678:USB_0_1_3_1_0",
+      "useDefault": false,
+      "fallbackToDefault": true,
+      "name": "CSK6012Combo",
+      "backendTarget": "plughw:1,0",
+      "lastError": ""
+    }
+  }
+}

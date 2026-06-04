@@ -376,12 +376,12 @@ name: voice_requirement_test
   "spell2zh": { "da3 kai1 feng1 shan4": "打开风扇" },
   "kw2protocol": { "打开风扇": "55 60 02 B7" },
   "absorb": { "风速大一点": ["档位高一点"] },
-  "ttsConfig": {
-    "app_id": "5af3aa4f",
-    "api_key": "fe85d97976354eeeaf3d0122fb44ba2b",
-    "vcn": "x4_yezi",
-    "speed": "50",
-    "pitch": "50",
+"ttsConfig": {
+  "app_id": "<fill-local-tts-app-id>",
+  "api_key": "<fill-local-tts-api-key>",
+  "vcn": "x4_yezi",
+  "speed": "50",
+  "pitch": "50",
     "volume": "100"
   }
 }

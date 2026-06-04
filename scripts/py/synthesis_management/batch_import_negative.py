@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Negative-matrix validation for 播报合成 batchImport."""
+"""API negative-matrix validation for 播报合成 batchImport.
+
+This uses the backend /biz/audiofile/batchImport endpoint directly. Treat the
+result as backend robustness evidence, not as proof that the browser UI can
+produce or submit the same file set.
+"""
 from __future__ import annotations
 
 import argparse
@@ -228,6 +233,7 @@ def write_report(out_dir: Path, payload: Dict[str, Any], downstream: Dict[str, A
     lines = [
         "# 播报合成批量导入异常矩阵验证", "",
         f"时间：{payload['createdAt']}", "", "## 结论", "",
+        "- 口径：本脚本直接调用 `/biz/audiofile/batchImport`，属于后端/API 健壮性探测；不能单独作为浏览器 UI 上传结论。",
         f"- 总用例：{summary['total']}",
         f"- 符合预期：{summary['expectedMatched']}",
         f"- 预期拒绝但接口放行：{summary['unexpectedPass']}",

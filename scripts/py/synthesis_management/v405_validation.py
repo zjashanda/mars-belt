@@ -4,12 +4,13 @@
 Focus areas from references/V4.0.5需求:
 - 音频合成：默认发音人、试听、Excel 导入、草稿/合成基础链路。
 - 播报合成/播报固件：播报控制导入/新增、控制配置新增、草稿与生成固件校验。
-- 播报控制音频上传：使用 V4.0.5 前端实际接口 /biz/audiofile/validate 和
-  /biz/audiofile/batchImportItems 覆盖正例、反例、异常和边界。
+- 播报控制音频上传：复用 V4.0.5 前端会调用的 /biz/audiofile/validate 和
+  /biz/audiofile/batchImportItems 做 API 等价验证。
 
-Main verdicts follow the UI-reachable rule: request payloads must match what a
-normal user can submit from the page. Values that the UI cannot fill, select, or
-submit must not be forced through API payloads; keep those as separate API probes.
+This script is not a browser/UI driver. It can prove backend/API behavior and
+UI-equivalent payload behavior, but it cannot prove that a real frontend upload
+component accepted or rejected a file. Browser/Playwright or manual UI evidence
+is required before reporting MP3/WAV upload validator issues as UI defects.
 """
 from __future__ import annotations
 
@@ -362,6 +363,12 @@ def prepare_audio_matrix(upload_dir: Path) -> Dict[str, Path]:
 
 
 def run_audio_validate_matrix(token: str, results: List[CaseResult], files: Dict[str, Path], out_dir: Path) -> None:
+    """Probe /biz/audiofile/validate directly.
+
+    These cases intentionally keep MP3/WAV format risks separate from UI main
+    conclusions. A real browser UI run may reject files before this endpoint is
+    called, so direct endpoint responses are backend/API robustness evidence.
+    """
     matrix = [
         ("AUD-001", "合法 MP3：16K/单通道/16kbps/<=500KB", "PASS", files["valid_mp3_16k"]),
         ("AUD-002", "合法 MP3：32000Hz 未超过 48K", "PASS", files["valid_mp3_32k"]),
@@ -386,19 +393,25 @@ def run_audio_validate_matrix(token: str, results: List[CaseResult], files: Dict
         data = body_data(resp) or {}
         valid = bool(is_api_pass(resp) and isinstance(data, dict) and data.get("valid") is True)
         actual = "PASS" if valid else "FAIL"
-        add_case(results, "audio_upload_validate", case_id, title, expected, actual, detail=str(data.get("message") or (resp.get("body") or {}).get("msg") or ""), request={"file": path.name}, response=resp, evidence={"ffprobe": ffprobe(path)})
-        probe_payload[case_id] = {"file": str(path), "response": scrub(resp), "ffprobe": ffprobe(path)}
+        evidence = {
+            "ffprobe": ffprobe(path),
+            "triggerMode": "direct_api_probe",
+            "uiFrontendTriggered": False,
+            "note": "Not browser evidence; rerun through UI upload component before claiming UI defect.",
+        }
+        add_case(results, "audio_upload_api_probe", case_id, title, expected, actual, detail=str(data.get("message") or (resp.get("body") or {}).get("msg") or ""), request={"file": path.name, "triggerMode": "direct_api_probe"}, response=resp, evidence=evidence)
+        probe_payload[case_id] = {"file": str(path), "response": scrub(resp), "ffprobe": ffprobe(path), "triggerMode": "direct_api_probe"}
     (out_dir / "audio_validate_raw.json").write_text(json.dumps(probe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def run_batch_import_items_matrix(token: str, results: List[CaseResult], files: Dict[str, Path], out_dir: Path) -> List[Dict[str, Any]]:
-    """Validate broadcast-control import with UI-reachable behavior only.
+    """Validate broadcast-control import with UI-equivalent API behavior.
 
-    Positive cases call the same save API as the UI after the table passes validation.
-    Negative table-field cases are recorded as front-end validation blocks and are not
-    force-submitted to backend, because a normal user cannot submit them from the UI.
-    Negative audio-file cases call only /biz/audiofile/validate, which is the UI-side
-    validation request triggered after selecting a file.
+    Positive cases call the same save API as the UI after emulating frontend
+    table validation. Negative table-field cases are recorded as frontend-model
+    validation blocks and are not force-submitted to backend. Negative audio-file
+    cases directly call /biz/audiofile/validate; treat them as API probes until a
+    browser/UI run proves the frontend actually triggered the request.
     """
     valid_rows: List[Dict[str, Any]] = []
 
@@ -421,8 +434,8 @@ def run_batch_import_items_matrix(token: str, results: List[CaseResult], files: 
         resp = batch_import_items(token, rows)
         actual = "PASS" if is_api_pass(resp) else "FAIL"
         request_rows = [{k: (Path(v).name if k == "file" else v) for k, v in r.items()} for r in rows]
-        add_case(results, "broadcast_control_import", case_id, title, "PASS", actual, detail=str((resp.get("body") or {}).get("msg") or ""), request={"rows": request_rows, "uiReachable": True}, response=resp)
-        raw[case_id] = {"request": request_rows, "response": scrub(resp), "path": "UI save API after front-end validation passed"}
+        add_case(results, "broadcast_control_import", case_id, title, "PASS", actual, detail=str((resp.get("body") or {}).get("msg") or ""), request={"rows": request_rows, "uiEquivalentPayload": True, "uiFrontendTriggered": False}, response=resp, evidence={"triggerMode": "ui_equivalent_api", "uiFrontendTriggered": False})
+        raw[case_id] = {"request": request_rows, "response": scrub(resp), "path": "UI-equivalent save API after modeled frontend validation", "triggerMode": "ui_equivalent_api"}
         if actual == "PASS":
             data = body_data(resp)
             if isinstance(data, list):
@@ -447,10 +460,11 @@ def run_batch_import_items_matrix(token: str, results: List[CaseResult], files: 
         ("BATCH-110", "导入反例：播报内容是文件名但文件夹中未选择对应音频", "未在文件夹中找到 missing.mp3"),
     ]
     for case_id, title, detail in ui_blocked_cases:
-        add_case(results, "broadcast_control_import_ui_validation", case_id, title, "FAIL", "FAIL", detail=detail, evidence={"submission": "blocked before /biz/audiofile/batchImportItems", "source": "front-end validator in uploadForm"})
-        raw[case_id] = {"path": "front-end validation only; backend not force-submitted", "detail": detail}
+        add_case(results, "broadcast_control_import_ui_validation", case_id, title, "FAIL", "FAIL", detail=detail, evidence={"submission": "blocked before /biz/audiofile/batchImportItems", "source": "front-end validator in uploadForm", "triggerMode": "frontend_model", "uiFrontendTriggered": False})
+        raw[case_id] = {"path": "frontend validation model only; backend not force-submitted", "detail": detail, "triggerMode": "frontend_model"}
 
-    # Invalid audio selections are UI-reachable because users can choose mp3/wav files that violate format constraints.
+    # Invalid audio selections are direct endpoint probes here. Browser UI evidence
+    # is required to prove the frontend accepts the selection and triggers validate.
     audio_negative_cases = [
         ("BATCH-AUD-101", "导入反例：选择超过 500KB MP3", files["invalid_mp3_oversize"]),
         ("BATCH-AUD-102", "导入反例：选择 64000Hz WAV", files["invalid_wav_64k"]),
@@ -463,8 +477,8 @@ def run_batch_import_items_matrix(token: str, results: List[CaseResult], files: 
         data = body_data(resp) or {}
         valid = bool(is_api_pass(resp) and isinstance(data, dict) and data.get("valid") is True)
         actual = "PASS" if valid else "FAIL"
-        add_case(results, "broadcast_control_import_audio_validation", case_id, title, "FAIL", actual, detail=str(data.get("message") or (resp.get("body") or {}).get("msg") or ""), request={"file": path.name, "uiReachable": True}, response=resp, evidence={"ffprobe": ffprobe(path), "submission": "blocked if validate returns invalid"})
-        raw[case_id] = {"path": "UI file validation /biz/audiofile/validate", "file": path.name, "response": scrub(resp), "ffprobe": ffprobe(path)}
+        add_case(results, "broadcast_control_audio_api_probe", case_id, title, "FAIL", actual, detail=str(data.get("message") or (resp.get("body") or {}).get("msg") or ""), request={"file": path.name, "triggerMode": "direct_api_probe"}, response=resp, evidence={"ffprobe": ffprobe(path), "submission": "blocked if validate returns invalid", "triggerMode": "direct_api_probe", "uiFrontendTriggered": False})
+        raw[case_id] = {"path": "direct /biz/audiofile/validate API probe", "file": path.name, "response": scrub(resp), "ffprobe": ffprobe(path), "triggerMode": "direct_api_probe"}
 
     (out_dir / "batch_import_items_raw.json").write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
     return valid_rows
@@ -714,7 +728,7 @@ def write_report(out_dir: Path, results: List[CaseResult], evidence: Dict[str, A
         "# V4.0.5 平台需求验证结果", "",
         f"时间：{payload['createdAt']}", "",
         "## 结论", "",
-        "- 测试口径：主结论只模拟正常 UI 可操作输入；UI 不可填写、不可选择、不可提交的参数不通过 API 强行写入，非 UI 路径只作为单独探测。",
+        "- 测试口径：本脚本是 UI 等价 API/前端规则建模，不是浏览器 UI 触发证据；MP3/WAV 上传类问题必须通过真实 UI 上传组件复核后才能写成 UI 功能缺陷。",
         f"- 总用例：{summary['total']}",
         f"- 符合预期：{summary['ok']}",
         f"- 异常被放行风险：{summary['riskUnexpectedPass']}",

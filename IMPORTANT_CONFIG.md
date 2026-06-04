@@ -4,15 +4,16 @@
 
 - Root file: `deviceInfo_generated.json`
 - Purpose: persistent global `ttsConfig` and audio-card base config for this skill
-- This file must be carried together when moving/copying/backing up `mars-belt`
+- `deviceInfo_generated.json` contains local credentials and machine-specific audio routing, so it must stay local and is ignored by git.
+- When moving/copying/backing up `mars-belt`, copy `deviceInfo_generated.example.json` to `deviceInfo_generated.json` on the target machine and fill local values.
 
-Current content:
+Template content:
 
 ```json
 {
   "ttsConfig": {
-    "app_id": "5af3aa4f",
-    "api_key": "fe85d97976354eeeaf3d0122fb44ba2b",
+    "app_id": "",
+    "api_key": "",
     "vcn": "x4_yezi",
     "speed": "50",
     "pitch": "50",
