@@ -48,10 +48,10 @@ RESROOT = TASKS_ROOT
 PKGROOT = TASKS_ROOT
 BURNROOT = ROOT / "burn"
 IS_WINDOWS = os.name == "nt"
-DEFAULT_TRACE_PORT = "COM14" if IS_WINDOWS else "/dev/ttyACM1"
+DEFAULT_TRACE_PORT = "COM14" if IS_WINDOWS else "/dev/ttyACM0"
 DEFAULT_PROTOCOL_PORT = "COM13" if IS_WINDOWS else "/dev/ttyACM2"
 DEFAULT_CTRL_PORT = "COM15" if IS_WINDOWS else "/dev/ttyACM4"
-DEFAULT_BURN_PORT = "COM14" if IS_WINDOWS else "/dev/ttyACM1"
+DEFAULT_BURN_PORT = "COM14" if IS_WINDOWS else "/dev/ttyACM0"
 
 CASE_ID = "\u7528\u4f8b\u7f16\u53f7"
 MOD = "\u529f\u80fd\u6a21\u5757"
@@ -119,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--burn-port", default=DEFAULT_BURN_PORT)
     parser.add_argument("--task-dir", default="", help="复用指定测试模式目录，便于在同一批产物上续跑")
     parser.add_argument("--variants", default="", help="仅执行指定变体，逗号分隔，如 pkg-01-mid-stable,pkg-03-right-boundary,pkg-04-full-save-on")
+    parser.add_argument("--comment-tag", default="", help="Append a short tag to each packaged release comment.")
     parser.add_argument("--update-audio-skills", action="store_true", help="即使本地 tools/audio 里已存在 audio skills，也执行 git pull --ff-only")
     parser.add_argument("--skip-device", action="store_true")
     return parser
@@ -312,7 +313,10 @@ def mk_device(config: Dict[str, Any], project_name: str, log_port: str, ctrl_por
     pretest["enabled"] = bool(ctrl_port)
     pretest["ctrlPort"] = ctrl_port
     pretest["ctrlBaudRate"] = 115200
-    pretest.setdefault("powerOnCmds", ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"])
+    pretest.setdefault(
+        "powerOnCmds",
+        ["uut-switch2.off", "uut-switch3.off", "uut-switch4.off", "uut-switch4.on", "sleep:3", "uut-switch2.on"],
+    )
     pretest.setdefault("cmdDelay", 0.3)
     pretest.setdefault("bootWait", 5)
     return device_info
@@ -431,6 +435,9 @@ def rows_voice_reg(base_rows: Sequence[Dict[str, Any]], config: Dict[str, Any]) 
     cfg_asserts = ["firmware.study_config.enable eq true"]
     if learn_word:
         cfg_asserts.append(f"firmware.study_config.reg_commands[*].word contains {learn_word}")
+    if learn_words:
+        cfg_asserts.append(f"firmware.study_config.reg_commands len_eq {len(learn_words)}")
+        cfg_asserts.append(f"firmware.study_config.user_cfg.asr_study_register_max eq {len(learn_words)}")
     main.update(
         {
             CASE_ID: "VOICE-001",
@@ -2850,6 +2857,10 @@ def main() -> int:
         specs = [spec for spec in specs if spec["id"] in selected_variant_ids]
         if not specs:
             raise RuntimeError(f"no variants matched --variants={args.variants}")
+    comment_tag = str(args.comment_tag or "").strip()
+    if comment_tag:
+        for spec in specs:
+            spec["comments"] = f"{spec['comments']}；{comment_tag}"
     run_id = run_id_for(selected)
     shared_name = product_name(args.module, selected["productLabel"], selected["versionLabel"])
     if str(args.task_dir or "").strip():

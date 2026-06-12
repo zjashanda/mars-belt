@@ -20,13 +20,23 @@ from typing import Any, Dict, List, Optional, Sequence
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
 
-# Smart defaults based on OS. ACM0 is unstable on the current bench; use ACM1
-# for runtime logs and burn handshakes unless explicitly overridden.
-DEFAULT_LOG_PORT = "/dev/ttyACM1" if IS_LINUX else "COM14"
+# Smart defaults based on the current 3021 bench.
+#
+# Verified on 2026-06-10:
+# - log/burn ROM: /dev/ttyACM0
+# - protocol UART: /dev/ttyACM2
+# - control UART: /dev/ttyACM4
+# - target power: uut-switch1
+# - boot strap: uut-switch3
+# - protocol gate: uut-switch2
+DEFAULT_LOG_PORT = "/dev/ttyACM0" if IS_LINUX else "COM14"
 DEFAULT_PROTOCOL_PORT = "/dev/ttyACM2" if IS_LINUX else "COM13"
-DEFAULT_BURN_PORT = "/dev/ttyACM1" if IS_LINUX else "COM14"
+DEFAULT_BURN_PORT = "/dev/ttyACM0" if IS_LINUX else "COM14"
 DEFAULT_PORT = DEFAULT_LOG_PORT
 DEFAULT_CTRL_PORT = "/dev/ttyACM4" if IS_LINUX else "COM15"
+DEFAULT_POWER_SWITCH = "uut-switch1"
+DEFAULT_BOOT_SWITCH = "uut-switch3"
+DEFAULT_PROTOCOL_SWITCH = "uut-switch2"
 
 INTERNAL_PY_ROOT = Path(__file__).resolve().parent / "py"
 if str(INTERNAL_PY_ROOT) not in sys.path:
@@ -551,7 +561,7 @@ def generate_email_report(task_dir: Path, result_dir: Path) -> None:
                 <div class="info-item"><label>固件版本</label><span>{escape(str(version))}</span></div>
                 <div class="info-item"><label>语言</label><span>{escape(language)}</span></div>
                 <div class="info-item"><label>测试时间</label><span>{escape(test_time)}</span></div>
-                <div class="info-item"><label>串口配置</label><span>ctrl=/dev/ttyACM4 log=/dev/ttyACM1 protocol=/dev/ttyACM2 burn=/dev/ttyACM1</span></div>
+                <div class="info-item"><label>串口配置</label><span>ctrl=/dev/ttyACM4 log=/dev/ttyACM0 protocol=/dev/ttyACM2 burn=/dev/ttyACM0 power=uut-switch4 boot=uut-switch3 protocolGate=uut-switch2</span></div>
             </div>
             <div class="result-box{' fail' if conclusion != 'PASS' else ''}">
                 <div class="pass-rate">{pass_rate}%</div>
@@ -1116,7 +1126,9 @@ def enter_burn_mode(
     log_file: Path,
     *,
     pre_burn_reboot: bool = False,
-    boot_switch: str = "uut-switch3",
+    boot_switch: str = DEFAULT_BOOT_SWITCH,
+    power_switch: str = DEFAULT_POWER_SWITCH,
+    protocol_switch: str = DEFAULT_PROTOCOL_SWITCH,
 ) -> None:
     write_burn_log(log_file, "Enter burn mode")
     if pre_burn_reboot:
@@ -1124,10 +1136,21 @@ def enter_burn_mode(
     else:
         write_burn_log(log_file, "Skip pre-burn reboot; use stable 4-step burn entry flow")
     wait_port(burn_port, attempts=20, delay_ms=500, log_file=log_file)
-    boot_switch = str(boot_switch or "uut-switch3").strip()
-    write_burn_log(log_file, f"Burn mode 4-step sequence: uut-switch1.off -> {boot_switch}.on -> uut-switch1.on -> {boot_switch}.off")
+    boot_switch = str(boot_switch or DEFAULT_BOOT_SWITCH).strip()
+    power_switch = str(power_switch or DEFAULT_POWER_SWITCH).strip()
+    protocol_switch = str(protocol_switch or "").strip()
+    if protocol_switch:
+        write_burn_log(log_file, f"Disconnect protocol gate before burn entry: {protocol_switch}.off")
+        invoke_ctrl_sequence(
+            [f"{protocol_switch}.off"],
+            ctrl_port=ctrl_port,
+            ctrl_baud=ctrl_baud,
+            cmd_delay_ms=cmd_delay_ms,
+            log_file=log_file,
+        )
+    write_burn_log(log_file, f"Burn mode 4-step sequence: {power_switch}.off -> {boot_switch}.on -> {power_switch}.on -> {boot_switch}.off")
     invoke_ctrl_sequence(
-        ["uut-switch1.off", f"{boot_switch}.on", "uut-switch1.on", f"{boot_switch}.off"],
+        [f"{power_switch}.off", f"{boot_switch}.on", f"{power_switch}.on", f"{boot_switch}.off"],
         ctrl_port=ctrl_port,
         ctrl_baud=ctrl_baud,
         cmd_delay_ms=cmd_delay_ms,
@@ -1146,18 +1169,44 @@ def exit_burn_mode(
     boot_wait_seconds: int,
     log_file: Path,
     *,
-    boot_switch: str = "uut-switch3",
+    boot_switch: str = DEFAULT_BOOT_SWITCH,
+    power_switch: str = DEFAULT_POWER_SWITCH,
+    protocol_switch: str = DEFAULT_PROTOCOL_SWITCH,
+    protocol_gate_wait_seconds: float = 3.0,
 ) -> None:
     write_burn_log(log_file, "Exit burn mode and restore power")
-    boot_switch = str(boot_switch or "uut-switch3").strip()
-    write_burn_log(log_file, f"Restore 3-step sequence: {boot_switch}.off -> uut-switch1.off -> uut-switch1.on")
-    invoke_ctrl_sequence(
-        [f"{boot_switch}.off", "uut-switch1.off", "uut-switch1.on"],
-        ctrl_port=ctrl_port,
-        ctrl_baud=ctrl_baud,
-        cmd_delay_ms=cmd_delay_ms,
-        log_file=log_file,
-    )
+    boot_switch = str(boot_switch or DEFAULT_BOOT_SWITCH).strip()
+    power_switch = str(power_switch or DEFAULT_POWER_SWITCH).strip()
+    protocol_switch = str(protocol_switch or "").strip()
+    if protocol_switch:
+        write_burn_log(
+            log_file,
+            f"Restore gated sequence: {protocol_switch}.off -> {boot_switch}.off -> {power_switch}.off -> {power_switch}.on -> wait {protocol_gate_wait_seconds}s -> {protocol_switch}.on",
+        )
+        invoke_ctrl_sequence(
+            [f"{protocol_switch}.off", f"{boot_switch}.off", f"{power_switch}.off", f"{power_switch}.on"],
+            ctrl_port=ctrl_port,
+            ctrl_baud=ctrl_baud,
+            cmd_delay_ms=cmd_delay_ms,
+            log_file=log_file,
+        )
+        time.sleep(max(float(protocol_gate_wait_seconds or 0), 0.0))
+        invoke_ctrl_sequence(
+            [f"{protocol_switch}.on"],
+            ctrl_port=ctrl_port,
+            ctrl_baud=ctrl_baud,
+            cmd_delay_ms=cmd_delay_ms,
+            log_file=log_file,
+        )
+    else:
+        write_burn_log(log_file, f"Restore 3-step sequence: {boot_switch}.off -> {power_switch}.off -> {power_switch}.on")
+        invoke_ctrl_sequence(
+            [f"{boot_switch}.off", f"{power_switch}.off", f"{power_switch}.on"],
+            ctrl_port=ctrl_port,
+            ctrl_baud=ctrl_baud,
+            cmd_delay_ms=cmd_delay_ms,
+            log_file=log_file,
+        )
     log_port_state(burn_port, log_file, "After restore sequence")
     wait_port(burn_port, attempts=20, delay_ms=300, log_file=log_file)
     time.sleep(boot_wait_seconds)
@@ -1478,6 +1527,8 @@ def run_burn(args: argparse.Namespace) -> int:
                     log_file,
                     pre_burn_reboot=args.pre_burn_reboot,
                     boot_switch=args.boot_switch,
+                    power_switch=args.power_switch,
+                    protocol_switch=args.protocol_switch,
                 )
                 invoke_burn_tool(tool_path, fw_path, args.burn_port, args.baud, log_file)
                 exit_burn_mode(
@@ -1488,6 +1539,9 @@ def run_burn(args: argparse.Namespace) -> int:
                     args.boot_wait_seconds,
                     log_file,
                     boot_switch=args.boot_switch,
+                    power_switch=args.power_switch,
+                    protocol_switch=args.protocol_switch,
+                    protocol_gate_wait_seconds=args.protocol_gate_wait_seconds,
                 )
                 set_device_loglevel(runtime_log_port, runtime_log_baud, args.skip_loglevel, log_file)
 
@@ -1520,6 +1574,9 @@ def run_burn(args: argparse.Namespace) -> int:
                         args.boot_wait_seconds,
                         log_file,
                         boot_switch=args.boot_switch,
+                        power_switch=args.power_switch,
+                        protocol_switch=args.protocol_switch,
+                        protocol_gate_wait_seconds=args.protocol_gate_wait_seconds,
                     )
                 except Exception as restore_exc:
                     write_burn_log(log_file, f"Power restore also failed: {restore_exc}")
@@ -1757,6 +1814,7 @@ def forward_package_weekly(args: argparse.Namespace) -> int:
     add_arg(command, "--burn-port", getattr(args, "burn_port", ""))
     add_arg(command, "--task-dir", getattr(args, "task_dir", ""))
     add_arg(command, "--variants", getattr(args, "variants", ""))
+    add_arg(command, "--comment-tag", getattr(args, "comment_tag", ""))
     add_flag(command, "--refresh-live", args.refresh_live)
     add_flag(command, "--update-audio-skills", getattr(args, "update_audio_skills", False))
     add_flag(command, "--skip-device", args.skip_device)
@@ -2167,6 +2225,7 @@ def build_parser() -> argparse.ArgumentParser:
     package_weekly.add_argument("--burn-port", default=DEFAULT_BURN_PORT)
     package_weekly.add_argument("--task-dir", default="")
     package_weekly.add_argument("--variants", default="")
+    package_weekly.add_argument("--comment-tag", default="")
     package_weekly.add_argument("--refresh-live", action="store_true")
     package_weekly.add_argument("--update-audio-skills", action="store_true")
     package_weekly.add_argument("--skip-device", action="store_true")
@@ -2270,7 +2329,10 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("--cmd-delay-ms", type=int, default=300)
     burn.add_argument("--burn-mode-wait-ms", type=int, default=2000)
     burn.add_argument("--pre-burn-reboot", action="store_true", help="Send reboot on ctrl port before the 4-step burn entry flow")
-    burn.add_argument("--boot-switch", default="uut-switch3", help="Control switch used for boot strap; current 3021 bench uses uut-switch3")
+    burn.add_argument("--boot-switch", default=DEFAULT_BOOT_SWITCH, help="Control switch used for boot strap; current 3021 bench uses uut-switch3")
+    burn.add_argument("--power-switch", default=DEFAULT_POWER_SWITCH, help="Control switch used for target power; current 3021 bench uses uut-switch4")
+    burn.add_argument("--protocol-switch", default=DEFAULT_PROTOCOL_SWITCH, help="Protocol UART gate switch; default disconnects protocol before normal boot and reconnects after boot")
+    burn.add_argument("--protocol-gate-wait-seconds", type=float, default=3.0, help="Wait after normal power-on before reconnecting protocol switch")
     burn.add_argument("--boot-wait-seconds", type=int, default=5)
     burn.add_argument("--skip-loglevel", action="store_true")
     burn.add_argument("--keep-extracted", action="store_true")

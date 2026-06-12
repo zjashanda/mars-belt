@@ -311,6 +311,66 @@ def local_rule_validate(row: Dict[str, str]) -> Tuple[bool, str]:
     return False, "本地规则未命中，需要页面/接口实际校验"
 
 
+def config_invariant_rows(context: Dict[str, Any]) -> List[Dict[str, str]]:
+    firmware = context.get("firmware") or {}
+    study_cfg = firmware.get("study_config") or {}
+    if not isinstance(study_cfg, dict) or not study_cfg.get("enable"):
+        return []
+
+    mode = str(study_cfg.get("mode") or study_cfg.get("type") or "").strip()
+    is_specific = "指定" in mode or mode.lower() == "specificlearn"
+    if not is_specific:
+        return []
+
+    user_cfg = study_cfg.get("user_cfg") or {}
+    reg_commands = [item for item in (study_cfg.get("reg_commands") or []) if isinstance(item, dict)]
+    reg_wakewords = [item for item in (study_cfg.get("reg_wakewords") or []) if isinstance(item, dict)]
+    checks = [
+        (
+            "INVARIANT-VOICE-REG-001",
+            "命令词指定学习模板数",
+            len(reg_commands),
+            as_int(user_cfg.get("asr_study_register_max")),
+            "firmware.study_config.user_cfg.asr_study_register_max",
+        ),
+        (
+            "INVARIANT-VOICE-REG-002",
+            "唤醒词指定学习模板数",
+            len(reg_wakewords),
+            as_int(user_cfg.get("wakeup_study_register_max")),
+            "firmware.study_config.user_cfg.wakeup_study_register_max",
+        ),
+    ]
+
+    rows: List[Dict[str, str]] = []
+    for case_id, title, actual_count, configured_max, path in checks:
+        if configured_max is None:
+            verdict = "ConfigFail"
+            detail = f"{path} 缺失或非整数；指定学习模式无法确认模板上限"
+        elif actual_count != configured_max:
+            verdict = "ConfigFail"
+            detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}；二者必须一致"
+        else:
+            verdict = "OK"
+            detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}"
+        rows.append(
+            {
+                "用例编号": case_id,
+                "原始参数": path,
+                "功能模块": "语音注册配置一致性",
+                "测试类型": "配置断言",
+                "执行器": "config-only",
+                "命令词": "",
+                "打包参数": "{}",
+                "配置断言": f"{path} eq {configured_max if configured_max is not None else 'MISSING'}",
+                "运行断言": "指定学习模式下模板上限必须与指定学习清单数量一致",
+                "执行结果": verdict,
+                "结果详情": detail,
+            }
+        )
+    return rows
+
+
 def write_suite_report(result_dir: Path, rows: Sequence[Dict[str, str]], summary: Dict[str, Any], name_prefix: str) -> None:
     csv_path = result_dir / f"{name_prefix}.csv"
     json_path = result_dir / f"{name_prefix}.json"
@@ -374,6 +434,10 @@ def build_config_only_rows(
                 "结果详情": detail,
             }
         )
+
+    for invariant_row in config_invariant_rows(context):
+        counters[invariant_row["执行结果"]] += 1
+        result_rows.append(invariant_row)
 
     summary = {
         "total": len(result_rows),

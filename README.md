@@ -13,9 +13,38 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `MARS_BELT_WORKFLOW.md`
 - `PLATFORM_API_VALIDATION.md`
 - `SKILL.md`
-- `SKILLbak.md`
 - `SYNTHESIS_MANAGEMENT_VALIDATION.md`
 - `TOOLS.example.md`
+- `assets/templates/algo_en_base_core.xlsx`
+- `assets/templates/algo_en_basic.xlsx`
+- `assets/templates/algo_en_depth_tuning.xlsx`
+- `assets/templates/algo_en_full_feature_stateful.xlsx`
+- `assets/templates/algo_en_multi_wakeup.xlsx`
+- `assets/templates/algo_en_multi_wakeup_loop.xlsx`
+- `assets/templates/algo_en_multi_wakeup_protocol.xlsx`
+- `assets/templates/algo_en_multi_wakeup_specified.xlsx`
+- `assets/templates/algo_en_protocol_active_passive.xlsx`
+- `assets/templates/algo_en_voice_reg_boundary_delete.xlsx`
+- `assets/templates/algo_en_voice_reg_continuous.xlsx`
+- `assets/templates/algo_en_voice_reg_specific.xlsx`
+- `assets/templates/algo_en_voice_register.xlsx`
+- `assets/templates/algo_zh_base_core.xlsx`
+- `assets/templates/algo_zh_basic.xlsx`
+- `assets/templates/algo_zh_depth_tuning.xlsx`
+- `assets/templates/algo_zh_full_feature_stateful.xlsx`
+- `assets/templates/algo_zh_multi_wakeup.xlsx`
+- `assets/templates/algo_zh_multi_wakeup_loop.xlsx`
+- `assets/templates/algo_zh_multi_wakeup_protocol.xlsx`
+- `assets/templates/algo_zh_multi_wakeup_specified.xlsx`
+- `assets/templates/algo_zh_protocol_active_passive.xlsx`
+- `assets/templates/algo_zh_voice_reg_boundary_delete.xlsx`
+- `assets/templates/algo_zh_voice_reg_continuous.xlsx`
+- `assets/templates/algo_zh_voice_reg_specific.xlsx`
+- `assets/templates/algo_zh_voice_register.xlsx`
+- `assets/templates/template_manifest.json`
+- `assets/templates/template_requirement_matrix.md`
+- `assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx`
+- `assets/templates/聆思科技_算法配置英文模板.xlsx`
 - `deviceInfo_generated.example.json`
 - `orion.skilltest.json`
 - `platform_feature_test_plan.md`
@@ -25,7 +54,10 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `references/V4.0.5需求/音频合成需求记录20260507.txt`
 - `references/docs/orion-skilltest-profile-framework.md`
 - `references/docs/orion.skilltest.json`
-- `references/语音注册.log`
+- `references/platform_firmware_minimal_packaging_strategy.md`
+- `references/platform_firmware_packaging_config_test_reference.md`
+- `references/platform_firmware_template_requirement_matrix.md`
+- `references/ui_firmware_packaging_workflow.md`
 - `references/语音注册命令词学习手工验证模板.md`
 - `scripts/20250327122938_功能测试用例.xlsx`
 - `scripts/auto_resume_3021_block_retests.sh`
@@ -37,6 +69,10 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `scripts/config/local_base_profiles.json`
 - `scripts/mars_belt.py`
 - `scripts/probe_volume_levels.py`
+- `scripts/py/listenai_3021_full_source_release.py`
+- `scripts/py/listenai_3021_more_vertical_package.py`
+- `scripts/py/listenai_3021_vertical_minimal_package.py`
+- `scripts/py/listenai_3021_vertical_runtime_smoke.py`
 - `scripts/py/listenai_advanced_combo_trials.py`
 - `scripts/py/listenai_algo_template_xlsx_to_release_json.py`
 - `scripts/py/listenai_audio_skill_bootstrap.py`
@@ -76,7 +112,33 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 - `scripts/py/synthesis_management/v405_validation.py`
 - `scripts/py/synthesis_management/validation.py`
 - `scripts/py/voiceTestLite.py`
+- `scripts/ui/build_3021_ui_packaging_plan.py`
+- `scripts/ui/generate_algo_template_variants.py`
+- `scripts/ui/package-lock.json`
+- `scripts/ui/package.json`
+- `scripts/ui/summarize_3021_packaging_results.py`
+- `scripts/ui/ui_3021_packaging_runner.js`
+- `scripts/ui/ui_firmware_packaging.js`
 - `scripts/vol_level_probe.py`
+- `scripts/wavSource/.aplay_cache/中等音量_2b6dc1bce33b.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_2a0c29d3581b.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_a4d226d22c53.wav`
+- `scripts/wavSource/.aplay_cache/减小音量_b8b93581d050.wav`
+- `scripts/wavSource/.aplay_cache/增大音量_12845b471d7d.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_08f12aa1579d.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_4e3efd11e18e.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_a7e9bdf7bc9a.wav`
+- `scripts/wavSource/.aplay_cache/小聆小聆_e92470385a6b.wav`
+- `scripts/wavSource/.aplay_cache/打开风扇_73785ad2b23a.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_4ac0235826c3.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_9dbbf9825d1e.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_dd66bd46243d.wav`
+- `scripts/wavSource/.aplay_cache/最大音量_f7d631f600fb.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_0ecfea05b405.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_b2f550fa19aa.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_b51108d0de23.wav`
+- `scripts/wavSource/.aplay_cache/最小音量_f9fbb0c93ce1.wav`
+- `scripts/wavSource/.aplay_cache/退出识别_33c3dad4c7c5.wav`
 - `scripts/wavSource/specificLearn.mp3`
 - `scripts/wavSource/一小时关机.mp3`
 - `scripts/wavSource/一帆风顺.mp3`
@@ -197,10 +259,15 @@ system: |
     - 再把目标固件复制到 `scripts/burn/app.bin`
     - `Uart_Burn_Tool` 只允许烧录 `scripts/burn/app.bin`
     - 禁止把任意外部 `.bin` 路径直接喂给烧录工具
-  17. 当前本地 3021 台架默认串口：日志 `/dev/ttyACM1@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM1@460800`；不要再把 `/dev/ttyACM0` 当运行日志口或烧录口使用，除非用户明确恢复。
-  18. 根目录 `orion.skilltest.json` 是 Augur/Orion 展示“可测模块 -> 测试方案 -> 自然语言用例 -> 执行证据”的结构化索引；新增、删除或调整平台功能测试模块、入口脚本、证据口径、风险等级、默认用例时，必须同步更新该 JSON，并执行 `python3 -m json.tool orion.skilltest.json` 校验。
-  19. 同步 git 前必须先构建可迁移发布副本：包含 `SKILL.md`、`orion.skilltest.json`、必要脚本、模板、参考资料和工具；排除 `TOOLS.md`、`deviceInfo_generated.json`、`plan.md`、`artifacts/`、烧录临时 `app.bin`、缓存和本机结果。其他 PC 拉取后应能基于 `TOOLS.example.md` 与 `deviceInfo_generated.example.json` 补齐本机配置后直接使用。
-  20. 生成报告、JSON、CSV、Markdown、HTML、xlsx、zip 或其他交付文件后，必须做可打开性和编码校验，避免其他环境打开乱码或文件损坏；校验结果要写入结果目录或 `plan.md`。
+  17. 当前本地 3021 台架默认口径：日志 `/dev/ttyACM0@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM0@460800`；电源控制 `uut-switch4`，boot 控制 `uut-switch3`，协议口开关 `uut-switch2`。
+  18. 3021 正常运行态上电必须使用协议口门控：`uut-switch2.off -> uut-switch3.off -> uut-switch4.off -> uut-switch4.on -> wait 3s -> uut-switch2.on`。脚本化配置中使用 `sleep:3` 表示该等待点；烧录进 boot 流程仍保持 `uut-switch4.off -> uut-switch3.on -> uut-switch4.on -> uut-switch3.off`，烧录阶段不要额外操作 `uut-switch2`。
+  19. 根目录 `orion.skilltest.json` 是 Augur/Orion 展示“可测模块 -> 测试方案 -> 自然语言用例 -> 执行证据”的结构化索引；新增、删除或调整平台功能测试模块、入口脚本、证据口径、风险等级、默认用例时，必须同步更新该 JSON，并执行 `python3 -m json.tool orion.skilltest.json` 校验。
+  20. 同步 git 前必须先构建可迁移发布副本：包含 `SKILL.md`、`orion.skilltest.json`、必要脚本、模板、参考资料和工具；排除 `TOOLS.md`、`deviceInfo_generated.json`、`plan.md`、`artifacts/`、烧录临时 `app.bin`、缓存和本机结果。其他 PC 拉取后应能基于 `TOOLS.example.md` 与 `deviceInfo_generated.example.json` 补齐本机配置后直接使用。
+  21. 生成报告、JSON、CSV、Markdown、HTML、xlsx、zip 或其他交付文件后，必须做可打开性和编码校验，避免其他环境打开乱码或文件损坏；校验结果要写入结果目录或 `plan.md`。
+  22. 平台固件打包从 2026-06-12 起强制采用 UI-only 路径：产品创建/复用、基础配置、算法导入、深度调优、生成打包必须由浏览器 UI 触发；禁止用历史 API 参数创建隐藏产品、强写 UI 不可选垂类/版本/配置或直接 API 发起打包。接口只允许用于登录态注入、只读枚举交叉确认、release 状态轮询和证据采集，不能作为主打包动作。
+  23. 后续平台打包测试默认使用“固定产品 + 同产品多 release + 最小规则矩阵”：每个垂类先固定一个代表品类，按产品能力生成 3/4 个组合包；若只支持基础/多唤醒通常 3 包，若同时支持语音注册和多唤醒通常 4 包。打包完成后必须按 release 实际参数生成真机验证方案。
+  24. UI 打包时如果平台为空或目标产品不存在，必须通过 UI 新建一个产品；同一产品不同配置必须继续在该产品下生成多个 release，不得因为配置不同再新建产品。
+  25. 每个 release 必须填写简短版本描述，描述当前配置向量即可，例如 `默认+指定唤醒`、`左边界+循环唤醒`、`右边界+协议唤醒`、`默认+指定学习+指定唤醒`、`关闭隔离`。描述要短，不写产品名、长版本号或冗余说明；若 UI 当前不暴露版本描述输入，必须记录为 UI 限制，禁止用 API 补写后冒充 UI 结果。
 
 ---
 
@@ -222,7 +289,14 @@ system: |
 - `capabilities[].id` 必须稳定且唯一，不能随意改名；确需改名时要保留迁移说明。
 - 每个能力必须包含可展示的自然语言 `test_cases`，不得只写命令行。
 - 设备相关能力必须明确串口、声卡、烧录、上下电等副作用和阻塞条件。
-- UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为辅助探测。
+- UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为只读辅助探测或非 UI 健壮性附录。
+- UI-only 固件打包必须每次重新读取平台 UI 当前页面、下拉选项和联动结果；历史导出的产品/芯片/语言/SDK 矩阵只能作为参考，不能作为脚本内置死数据或后续打包输入源。详细流程见 `references/ui_firmware_packaging_workflow.md`。
+- 平台固件打包默认按“最小组合包”设计矩阵：首包默认配置验证主链路，后续包组合覆盖基础边界、协议、保存项、多唤醒模式、语音注册模式和模板数/重试次数；详细参考 `references/platform_firmware_minimal_packaging_strategy.md`。
+- 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
+- 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
+- 严格 UI-only 打包中，产品创建也必须通过 UI；平台为空或目标产品不存在时，按页面实时联动新建产品，不允许使用旧 API 参数创建隐藏产品壳。API/options 只能作为只读排查；非严格兼容性兜底必须单独标记，不能计入 UI-only 主结论。
+- 同一产品下生成多个 release 时，版本描述使用短配置摘要，便于平台列表直接区分；不得留空、不得写长段说明。若页面确实没有输入入口，记录 `version_description_ui_not_exposed`。
+- V1.0 老版本若配置可到完成页但生成后 release 列表为空，标记 `legacy_v1_generate_no_release`，不能按成功或未测处理；需要附 result、截图、产品 id 和 release 列表为空证据。
 - 更新后必须执行：
 
 ```bash
@@ -279,13 +353,14 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 异常矩阵命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.batch_import_negative`。
 - 严格 UI 结论必须由浏览器 UI 或人工 UI 操作触发；直接调 `/biz/audiofile/validate`、`/biz/audiofile/batchImport`、`/biz/audiofile/batchImportItems` 只能标为“UI 等价 API”或“后端健壮性探测”。特别是 `.wav`、MP3 码率、WAV bit depth 等上传限制，若没有浏览器证据，不得写成前端 UI 缺陷。
 - 当前已知 API 探测风险：后端接口曾放行 `.wav`/伪后缀/mp3 文件名不匹配/缺列空值/非法协议/缺少音频，且这些异常行还能继续创建播报版本；报告时必须明确标为后端校验缺失或待 UI 复核，不能混入 UI 主结论。
-- 若要把播报 SDK 下发到 3021 设备复核，先静态检查 SDK 内 `cfg.json/ring_cfg.json/fw.bin`，再按固定 `scripts/burn/app.bin` 流程烧录；当前默认日志/烧录口使用 `/dev/ttyACM1`，协议口使用 `/dev/ttyACM2`。烧录后必须看到日志串口、协议口或实际播报证据，不能只凭 SDK zip 可下载或烧录工具成功判定设备侧通过。若 `fw.bin/fw.img` 烧录成功但设备无日志/无协议响应，记录为当前 SDK 产物或烧录路径不适配，并恢复已知可用固件。
+- 若要把播报 SDK 下发到 3021 设备复核，先静态检查 SDK 内 `cfg.json/ring_cfg.json/fw.bin`，再按固定 `scripts/burn/app.bin` 流程烧录；当前默认日志/烧录口使用 `/dev/ttyACM0`，协议口使用 `/dev/ttyACM2`，运行态上电使用 `uut-switch2` 协议门控。烧录后必须看到日志串口、协议口或实际播报证据，不能只凭 SDK zip 可下载或烧录工具成功判定设备侧通过。若 `fw.bin/fw.img` 烧录成功但设备无日志/无协议响应，记录为当前 SDK 产物或烧录路径不适配，并恢复已知可用固件。
 
 ## 合成导入与边界异常
 - 用户要求验证“音频合成/播报合成从文件导入表、异常兜底、合成上限、条数上限、单条字符上限”时，必须补跑专项边界脚本，不得只跑正常全链路。
 - 数据来源口径：
   - 表格导入内容可以按模板自动构造正常/异常数据，用于验证导入解析和异常兜底。
   - UI 页面元素、下拉枚举、发音人、压缩比、芯片/版本等不能自造，必须来自平台菜单、字典、options 或页面已有数据。
+  - UI 可能更新，保存到本地的 options/CSV/JSON/截图只能提供测试设计思路；执行测试时必须通过浏览器 UI 或当前 UI 同源 options 重新确认可选项。
   - 若直接调用 API 传入 UI 不可能选择的枚举值，只能标为“接口健壮性探测”，不能写成 UI 可执行用例失败。
   - V4.0.5 起主结论必须模拟“正常人在 UI 上可完成的操作”：严格 UI 结论必须由浏览器 UI/人工 UI 触发；调用 UI 同款接口但未经过前端组件的，只能写成“UI 等价 API 辅助验证”。UI 会拦截的负例只记录为前端校验，不得绕过 UI 强行提交后端并混入主结论。
   - 禁止为了覆盖异常而直接修改 API payload，强行写入 UI 页面不可填写、不可选择、不可提交的字段或参数；这类内容只能单独列为非 UI 路径接口健壮性探测。
@@ -631,8 +706,10 @@ recovery:
   burn_control:
     logic: |
       烧录控制只允许使用当前 switch 命令：
-      - 当前 3021 台架进入烧录模式: `uut-switch1.off` → `uut-switch3.on` → `uut-switch1.on` → `uut-switch3.off`
-      - 当前 3021 台架退出烧录模式并恢复上电: `uut-switch3.off` → `uut-switch1.off` → `uut-switch1.on`
+      - 当前 3021 台架进入烧录模式: `uut-switch4.off` → `uut-switch3.on` → `uut-switch4.on` → `uut-switch3.off`
+      - 当前 3021 台架烧录后恢复运行态: `uut-switch2.off` → `uut-switch3.off` → `uut-switch4.off` → `uut-switch4.on` → 等待 3 秒 → `uut-switch2.on`
+      - 自动化 `powerOnCmds` 中用 `sleep:3` 固化“等待 3 秒”步骤，不能把 `uut-switch4.on` 与 `uut-switch2.on` 连续紧贴下发
+      - `uut-switch2` 是协议口开关，不是 3021 boot 线；烧录进 boot 阶段不要操作 `uut-switch2`
       - 历史 3122 台架可能使用 `uut-switch2` 作为 boot 线；未确认前不得把 3122 的 `uut-switch2` 逻辑套到 3021
       默认按单次连续会话下发完整序列，不拆成其他替代流程
       若 ROM 握手异常，先恢复正常上电基线，再按
@@ -683,6 +760,20 @@ validation_rules:
       1. 功能是否触发
       2. 协议是否完整一致
       3. 若协议异常，属于真实协议错误还是打印链路异常
+
+---
+
+# 3021 垂类最小覆盖验证
+
+- 平台垂类验证不要堆全量词表。默认使用“默认唤醒 + 2 个代表业务命令 + 1 个音量命令 + 多唤醒切换/恢复 + 语音注册（仅支持垂类）”做最小高价值覆盖；静态校验再确认所选词、同义词、协议和能力开关已落入 `web_config.json`。
+- 当前已沉淀的 3021 垂类覆盖口径：
+  - 风扇：`打开风扇`、`关闭风扇`、`最大音量`、`风扇管家` 多唤醒；语音注册不支持则跳过。
+  - 取暖器：`打开取暖器`、`关闭取暖器`、`最大音量`、`暖风管家` 多唤醒；语音注册不支持则跳过。
+  - 取暖桌：`开机/关机`、`最大音量`、`暖桌管家` 多唤醒、`学习命令词/删除命令词` 语音注册。
+  - 茶吧机/窗帘沿用对应垂类代表业务命令、音量、多唤醒、语音注册能力门控。
+- 对极短或强同音命令（如取暖桌 `开机`/`关机`）如果 TTS 容易串扰，可以使用 `web_config.json` 中同一 intent 的配置同义词作为播报文本，但报告必须写明“播报同义词 -> 校验规范 intent”，不能伪造 UI 不支持的词。
+- 连续学习类垂类删除命令词必须按双确认链路验证：`小聆小聆 -> 删除命令词 -> 删除命令词`，并等待算法重建完成；只播一次删除词没有形成 `reg del`/`del voice` 证据时，优先按用例时序问题收敛。
+- SDK 验证先静态解压 `mars-sdk.zip` 并比对 `build/bin/app.bin` 与固件包 `fw.bin` 的 hash；hash 一致时固件运行态证据可作为等价参考，但仍建议至少抽样烧录 SDK `app.bin`。若平台成功打包但 `pkgSDKUrl` 为空或 artifact 无 `MarsSDK_product`，归为平台 SDK 产物缺失，不得写成设备验证失败。
 
 ---
 
@@ -880,6 +971,30 @@ examples:
 - 原始参考模板保留在：
   - `scripts/聆思科技_算法配置英文模板.xlsx`
 
+### UI 算法模板选择规则
+- 本地 `assets/templates/` 中的 `algo_*.xlsx` 是 fallback 测试数据模板，不代表平台永远最新格式；正式 UI 打包若页面支持下载最新模板，必须优先用 UI 最新模板作为底板，再按同类 profile 生成/导入数据。
+- 模板按测试类型选择：
+  - 基础/边界/普通垂类：`algo_<lang>_base_core.xlsx`
+  - 主动/被动协议：`algo_<lang>_protocol_active_passive.xlsx`
+  - 多唤醒循环/指定/协议切换：`algo_<lang>_multi_wakeup_loop.xlsx`、`algo_<lang>_multi_wakeup_specified.xlsx`、`algo_<lang>_multi_wakeup_protocol.xlsx`
+  - 语音注册指定学习/连续学习/边界删除：`algo_<lang>_voice_reg_specific.xlsx`、`algo_<lang>_voice_reg_continuous.xlsx`、`algo_<lang>_voice_reg_boundary_delete.xlsx`
+  - 深度调优：`algo_<lang>_depth_tuning.xlsx`
+  - 全功能耦合冒烟：`algo_<lang>_full_feature_stateful.xlsx`，若编译容量异常必须拆回专项模板定位
+- 每个模板都要满足最低基础能力：默认唤醒、至少两个业务命令、音量上/下/最大/最小/中等、退出识别、负性词、欢迎语、被动播报、休息语、心跳协议、发送协议和接收协议。
+- 语音注册模板只提供学习/删除/退出控制词和宿主动作；字数上下限、重复次数、重试次数、模板上限等边界语料在运行时按配置合成，不允许把语音注册控制词当普通负例词使用。
+- 多唤醒模板只提供候选唤醒词和切换/查询/恢复触发数据；`isDefault`、`isFrozen`、`sndProtocol`、`recProtocol` 等字段必须通过当前 UI 多唤醒表格真实配置。
+- 更新或新增平台可配置参数后，必须同步 `scripts/ui/generate_algo_template_variants.py`、`assets/templates/template_manifest.json`、`assets/templates/template_requirement_matrix.md` 和 `references/platform_firmware_template_requirement_matrix.md`，并完成 xlsx/JSON/编码校验。
+
+### 平台配置取值压缩规则
+- 本规则只适用于 UI-only 固件打包主链路；历史 API 打包不得再作为平台固件打包测试入口，除非用户明确要求做“接口健壮性探测”，且结果必须单独标注，不能混入 UI 主结论。
+- 不允许把列表型参数逐项枚举打包。类似音量挡位 `[1..10]`，默认只取 `最小/中间/最大` 三个代表值；如果平台列表不是数字，取首项、典型项、末项。
+- 布尔参数必须覆盖两个状态，但应放入不同配置向量包里组合验证，不为单个布尔值单独扩包。
+- 字符串参数只取符合 UI 校验和业务语义的合法样例；除非要验证前端异常提示，否则不做多字符串枚举。
+- 普通数字输入参数不机械取极限边界。语音注册模板数、重试次数、次数上限这类字段优先取 `1/3/5` 或 UI 允许范围内最接近的低/中/高代表值；若 UI 最大值小于 5，则取范围内的代表值，例如只允许 `1/2` 时覆盖 `1/2`。
+- 依赖型参数必须组合到同一个 release 中验证，例如 `voiceRegEnable + registMode + 模板数/重试次数 + 学习命令配置`，或 `multiWkeEnable + multiWkeMode + wakeWordSave + 候选词配置`。
+- 只有出现 FAIL/BLOCK/重启/构包异常时，才追加控制变量包；控制变量包必须把其他参数恢复默认，只保留问题参数和最小依赖。
+- UI-only 批量结果汇总使用 `scripts/ui/summarize_3021_packaging_results.py` 生成 JSON/Markdown/CSV；CSV 必须用 `utf-8-sig`，报告中按产品列出 release、创建路径、profile、覆盖点和失败分类。
+
 ### 用例生成
 - 全量基础用例：超时时间、音量档位、全部唤醒词和命令词识别、协议收发验证、响应播报ID 等全部验证一遍
 
@@ -951,13 +1066,20 @@ examples:
 ## 模式3：测试模式（完整验证）
 
 ### 打包原则（重要）⚠️
-**边界值打包原则：不是枚举所有组合，而是用最少的包覆盖最多的边界值与依赖链路。**
+**配置向量打包原则：不是枚举所有组合，而是用最少的包覆盖最多的等价类、代表值与依赖链路。**
+- 固件打包主链路必须走 UI：页面上新建/查询产品，进入同一产品详情，在 UI 中连续生成多个 release；脚本不得使用 `biz/prod/add`、旧 `defId/versionLabel/type/scene/mode` 参数或其它写接口替代 UI。
+- 产品不存在或平台被清空时，必须走 UI `新增` 创建一个产品；后续所有配置包都落在这个产品下。
+- 每个 release 在生成前必须填写短版本描述，描述配置向量而不是产品信息，例如 `默认+多唤醒指定`、`左边界+连续学习+循环`。
+- 同一垂类先固定一个代表品类，再根据 UI 当前能力裁剪包矩阵；支持多唤醒/语音注册时打开对应开关并选择对应模板，不支持时不得硬测。
+- 生成 release 后不要逐包阻塞等待编译完成；全部提交后统一轮询 release 状态，再按每个 release 的配置参数生成烧录和真机验证计划。
 - 大多数产品应先按“约 `5` 个包”规划，不要无节制扩包
 - 只有组合包出现 `FAIL`、`BLOCK`、重启、打包异常或系统性异常时，才允许追加控制变量包
-- 数值/枚举参数必须覆盖左边界、中值、右边界
+- 列表型参数覆盖首项/中间项/末项；类似音量 `[1..10]` 只取 `1/5/10`，禁止一级一级打包
+- 普通数字输入参数优先覆盖 `1/3/5` 或 UI 范围内近似的低/中/高代表值，不机械使用极限边界
 - 字符串参数通常验证 `1` 次即可
 - 布尔参数覆盖 `true/false`
 - 依赖型参数必须放在同一包里联动验证
+- 单个 release 应尽量组合多个配置点；不要为了覆盖一个音量、一个开关或一个字符串单独打一包
 - 当前产品不支持的能力必须裁掉，不能为了凑模板硬测
 
 ### 推荐打包矩阵

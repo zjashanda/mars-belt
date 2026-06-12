@@ -102,7 +102,7 @@ python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast --keep-p
 ## 播报 SDK 设备侧复核
 
 - 设备侧复核前先静态检查 SDK zip：必须确认 `Standard_product/fw.bin`、`out/stage2_output/cfg.json`、`ring_cfg.json` 都存在，并核对 `uart_config.trace_uart/trace_baud`、`uport_uart/uport_baud`、`command.recv_pro_buffer`、`play_id` 与音频资源是否一致。
-- 当前本地 3021 台架默认串口：日志 `/dev/ttyACM1@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM1@460800`；`/dev/ttyACM0` 暂不作为运行日志口或烧录口使用。
+- 当前本地 3021 台架默认串口：日志 `/dev/ttyACM0@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM0@460800`；`/dev/ttyACM0` 暂不作为运行日志口或烧录口使用。
 - 不能只因为 SDK zip 可下载/可解压就判定设备侧可运行；必须烧录后看到日志串口、协议口或可观测播报中的至少一种证据。
 - 烧录仍遵循固定流程：清空 `scripts/burn/app.bin`，把待烧录固件复制或从 zip 提取成 `scripts/burn/app.bin`，再调用 `Uart_Burn_Tool -f app.bin`；不得把外部 bin/img 路径直接喂给烧录工具。
 - 如果播报 SDK 的 `fw.bin/fw.img` 写入成功但设备无启动日志、协议无响应，应记录为“设备侧运行证据不足/当前烧录路径不适配”，不能把平台播报功能判为通过；验证后要恢复已知可用固件，避免设备停留在不可观测状态。

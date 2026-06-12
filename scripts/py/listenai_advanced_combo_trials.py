@@ -889,6 +889,17 @@ def package_release_with_algo_unified(
                 algo_payload["releaseRegist"] = deepcopy(DEFAULT_RELEASE_REGIST)
             if "releaseRegistConfig" not in algo_payload:
                 algo_payload["releaseRegistConfig"] = deepcopy(DEFAULT_RELEASE_REGIST_CONFIG)
+
+            # specificLearn binds every saved template to a configured learn target.
+            # Keep the template capacity aligned with the generated target list;
+            # otherwise packages can be generated with e.g. three learn targets but
+            # ten template slots, which is not a valid device-side state model.
+            release_regist = algo_payload.setdefault("releaseRegist", deepcopy(DEFAULT_RELEASE_REGIST))
+            if str(release_regist.get("registMode") or "").strip() == "specificLearn":
+                command_capacity = len(normalize_voice_reg_learn_commands(selected_commands))
+                if command_capacity > 0:
+                    release_regist["commandRegistMaxLimit"] = command_capacity
+
             resolved_voice_reg_learn_commands = apply_voice_reg_learn_commands(algo_payload, selected_commands)
             resolved_overrides["releaseRegist"] = deepcopy(algo_payload["releaseRegist"])
             resolved_overrides["releaseRegistConfig"] = deepcopy(algo_payload["releaseRegistConfig"])

@@ -4,7 +4,7 @@
   "name": "Mars Belt Platform Validation",
   "summary": "MarsPlatform 固件打包、合成管理、平台接口、语音注册、多唤醒、设备烧录与运行态验证的模块化 SkillTest 资料。",
   "version": "1.0.0",
-  "updated_at": "2026-06-04",
+  "updated_at": "2026-06-11",
   "flow": [
     "选择 Agent 节点",
     "配置平台 token / UI 登录态 / 设备串口声卡",
@@ -132,9 +132,9 @@
       "id": "firmware_package_matrix",
       "module": "firmware_packaging",
       "name": "固件打包矩阵",
-      "summary": "按最少包覆盖最多参数的原则执行基础包、边界包、分组包和控制变量包。",
+      "summary": "通过浏览器 UI-only 按固定产品、多 release、最小规则矩阵完成固件打包。",
       "requirement": "验证平台配置能正确保存、打包、下载，并生成可供设备验证的固件/SDK 产物。",
-      "logic": "使用 package-custom、package-weekly、package-batch、package-grouped 生成不同配置包，静态校验 zip 内 web_config/cfg 参数并记录版本、配置和下载产物。",
+      "logic": "实时读取 UI 当前下拉/卡片/联动结果；目标产品不存在或平台为空时通过 UI 新建一个产品；同一产品下生成多个简短版本描述的 release；基础/多唤醒/语音注册按 3/4 包最小矩阵覆盖，全部提交后统一轮询 release 状态，再基于实际配置做真机验证。API 仅用于登录态注入、只读交叉确认和状态轮询，不作为创建/配置/打包动作。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -142,17 +142,21 @@
       ],
       "recommended_mode": "execute",
       "runner": "agent_shell",
-      "task": "scripts/mars_belt.py package-custom|package-weekly|package-batch|package-grouped",
+      "task": "scripts/ui/ui_3021_packaging_runner.js --create-mode ui-strict --submit-only; scripts/ui/summarize_3021_packaging_results.py",
       "requires": [
         "有效 LISTENAI_TOKEN",
-        "目标产品支持矩阵",
-        "打包参数矩阵",
-        "平台打包服务可用"
+        "浏览器/Chrome 可用",
+        "平台固件打包菜单权限",
+        "UI 当前可选产品/垂类/模组/版本",
+        "同类算法模板或 UI 下载模板",
+        "最小规则配置矩阵"
       ],
       "side_effects": [
-        "在平台创建受控 release/打包任务",
-        "下载固件 zip",
-        "可能触发平台排队构建"
+        "通过 UI 新建受控产品（当产品不存在时）",
+        "同一产品下创建多个 release",
+        "上传算法模板",
+        "触发平台打包队列",
+        "下载/轮询固件产物"
       ],
       "risk_level": "medium",
       "test_cases": [
@@ -165,10 +169,11 @@
             "平台打包队列可用"
           ],
           "steps": [
-            "创建或复用受控 release。",
-            "使用中值参数发起打包。",
-            "轮询任务到成功。",
-            "下载 zip 并静态检查配置文件。"
+            "通过 UI 查询目标产品；不存在时通过 UI 新建一个产品。",
+            "进入该产品详情，按最小规则配置当前 release。",
+            "填写简短版本描述标识当前配置。",
+            "点击生成并关闭后继续提交下一配置，不逐包等待。",
+            "全部提交后统一轮询 release 状态并汇总证据。"
           ],
           "expected_results": [
             "打包成功。",
@@ -179,9 +184,12 @@
             "打包日志",
             "固件 zip",
             "配置断言 JSON",
-            "Markdown 报告"
+            "Markdown 报告",
+            "UI 新建/复用产品证据",
+            "release 短版本描述",
+            "release 状态轮询结果"
           ],
-          "pass_criteria": "打包成功且配置断言通过。",
+          "pass_criteria": "所有预期 release 由 UI 提交成功，后台状态 success；平台为空时能 UI 新建产品；同一产品下不同配置 release 可由短版本描述区分。",
           "fail_criteria": "打包失败、下载失败、zip 损坏或配置未入包。",
           "blocked_conditions": [
             "token 无效",
@@ -199,10 +207,11 @@
             "已明确哪些参数可直接编辑"
           ],
           "steps": [
-            "按最少包数设计边界组合。",
-            "逐包发起打包并下载。",
-            "检查每包变更点和未变更项。",
-            "生成功能覆盖矩阵。"
+            "通过 UI 查询目标产品；不存在时通过 UI 新建一个产品。",
+            "进入该产品详情，按最小规则配置当前 release。",
+            "填写简短版本描述标识当前配置。",
+            "点击生成并关闭后继续提交下一配置，不逐包等待。",
+            "全部提交后统一轮询 release 状态并汇总证据。"
           ],
           "expected_results": [
             "每个可测参数至少覆盖有效边界。",
@@ -212,9 +221,12 @@
             "variant manifest",
             "featureSummary",
             "config assertion",
-            "downloaded zip"
+            "downloaded zip",
+            "UI 新建/复用产品证据",
+            "release 短版本描述",
+            "release 状态轮询结果"
           ],
-          "pass_criteria": "所有计划包成功或有明确阻塞归因。",
+          "pass_criteria": "所有预期 release 由 UI 提交成功，后台状态 success；平台为空时能 UI 新建产品；同一产品下不同配置 release 可由短版本描述区分。",
           "fail_criteria": "参数未入包、组合包失败且无法归因、重复打包污染结果。",
           "blocked_conditions": [
             "参数互斥关系不明",
@@ -231,10 +243,11 @@
             "已识别疑似参数或依赖组"
           ],
           "steps": [
-            "将其他参数恢复默认。",
-            "构造单参数或最小依赖包。",
-            "重新打包、下载和断言。",
-            "对比原失败包与控制变量包。"
+            "通过 UI 查询目标产品；不存在时通过 UI 新建一个产品。",
+            "进入该产品详情，按最小规则配置当前 release。",
+            "填写简短版本描述标识当前配置。",
+            "点击生成并关闭后继续提交下一配置，不逐包等待。",
+            "全部提交后统一轮询 release 状态并汇总证据。"
           ],
           "expected_results": [
             "能证明失败属于参数本身、依赖组合或非功能阻塞。",
@@ -243,9 +256,12 @@
           "evidence": [
             "control package manifest",
             "before/after comparison",
-            "rerun report"
+            "rerun report",
+            "UI 新建/复用产品证据",
+            "release 短版本描述",
+            "release 状态轮询结果"
           ],
-          "pass_criteria": "控制变量包给出可复现或可排除结论。",
+          "pass_criteria": "所有预期 release 由 UI 提交成功，后台状态 success；平台为空时能 UI 新建产品；同一产品下不同配置 release 可由短版本描述区分。",
           "fail_criteria": "未复测就归因，或控制变量包仍混入无关变更。",
           "blocked_conditions": [
             "平台打包不可用",
@@ -259,9 +275,9 @@
       "id": "device_burn_runtime_validation",
       "module": "device_runtime",
       "name": "设备烧录与运行态验证",
-      "summary": "把平台产物烧录到本地设备，验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
+      "summary": "把平台产物烧录到本地设备，使用 3021 switch2 协议口门控上电策略验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
       "requirement": "证明固件不仅能打包，还能在目标设备上稳定启动并按配置工作。",
-      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按控制口 boot 四步烧录；烧录后执行 generate-suite/validate，采集日志、协议、音频和报告证据。",
+      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按 switch4/switch3 进入 boot 烧录；烧录后正常上电前先 switch2.off 断开协议口，上电稳定后 switch2.on 接回协议口，再执行 generate-suite/validate，采集日志、协议、音频和报告证据。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -277,14 +293,17 @@
         "日志串口",
         "协议串口",
         "播放声卡",
-        "设备供电/boot 线正常"
+        "设备供电/boot 线正常",
+        "协议口开关 uut-switch2",
+        "3021 门控上电：switch2.off -> switch3.off -> switch4.off -> switch4.on -> wait -> switch2.on"
       ],
       "side_effects": [
         "设备上下电",
         "进入 boot",
         "擦写固件",
         "播放测试音频",
-        "发送串口协议"
+        "发送串口协议",
+        "断开/接回协议口开关 uut-switch2"
       ],
       "risk_level": "high",
       "test_cases": [
@@ -300,21 +319,23 @@
           "steps": [
             "清空 scripts/burn/app.bin。",
             "从 zip 提取或复制目标固件到 app.bin。",
-            "执行下电、进 boot、上电、出 boot。",
+            "执行 switch4.off、switch3.on、switch4.on、switch3.off 进入 boot；烧录阶段不操作 switch2。",
             "调用 Uart_Burn_Tool 烧录 app.bin。",
-            "恢复上电。"
+            "烧录后执行 switch2.off、switch3.off、switch4.off、switch4.on，等待 3 秒后 switch2.on 恢复协议口。"
           ],
           "expected_results": [
             "烧录日志包含 ROM loader、MD5、END 成功标记。",
-            "控制命令全部 OK。"
+            "控制命令全部 OK。",
+            "恢复运行态后日志口可输出启动日志，协议口可接收基础帧。"
           ],
           "evidence": [
             "burn.log",
             "burn tool log",
-            "control serial log"
+            "control serial log",
+            "switch2 gated runtime log"
           ],
-          "pass_criteria": "烧录成功标记完整且恢复上电。",
-          "fail_criteria": "ROM 握手失败、控制命令失败、烧录后设备不可恢复。",
+          "pass_criteria": "烧录成功标记完整，且 switch2 门控恢复上电后日志/协议链路可用。",
+          "fail_criteria": "ROM 握手失败、控制命令失败、未执行协议门控、烧录后设备不可恢复或日志/协议无响应。",
           "blocked_conditions": [
             "串口被占用",
             "boot 线异常",
@@ -331,6 +352,7 @@
             "日志/协议/声卡链路可用"
           ],
           "steps": [
+            "预处理上电使用 switch2.off -> switch3.off -> switch4.off -> switch4.on -> wait -> switch2.on，避免协议口拉低导致误进 boot。",
             "生成 suite 和 deviceInfo。",
             "执行预处理：上电、等待启动、设置 loglevel、等待识别就绪。",
             "执行配置断言和基础功能用例。",
@@ -365,7 +387,7 @@
       "name": "语音注册专项",
       "summary": "验证命令词/唤醒词学习、重试、重复次数、删除、容量、边界和不同学习模式。",
       "requirement": "只在产品支持语音注册时执行，证明学习成功后可用、删除后失效、失败后不污染默认能力。",
-      "logic": "根据 releaseRegist 配置生成专项包和 VOICE-* suite，等待提示播报结束后播放注册语料，按日志、播报、协议和回测结果判定。",
+      "logic": "根据 releaseRegist 配置生成专项包和 VOICE-* suite，等待提示播报结束后播放注册语料，按日志、播报、协议和回测结果判定。 打包模板按 specific/continuous/boundary_delete 选择，控制词只用于语音注册专项，不作为普通负例。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -379,7 +401,8 @@
         "语音注册配置",
         "日志/协议串口",
         "播放声卡",
-        "平台支持命令词/唤醒词语料"
+        "平台支持命令词/唤醒词语料",
+        "语音注册同类算法模板"
       ],
       "side_effects": [
         "烧录固件",
@@ -497,7 +520,7 @@
       "name": "多唤醒与唤醒词掉电保存",
       "summary": "验证多个唤醒词的新增、切换、查询、恢复默认和掉电保存行为。",
       "requirement": "只在产品支持多唤醒时执行，确认当前词/非当前词、生效和掉电保持逻辑正确。",
-      "logic": "打包含额外唤醒词的固件，烧录后按唤醒/切换/查询/恢复默认/断电重启路径验证当前唤醒词状态。",
+      "logic": "打包含额外唤醒词的固件，烧录后按唤醒/切换/查询/恢复默认/断电重启路径验证当前唤醒词状态。 loop/specified/protocol 三种模式分别选择对应算法模板和 UI 多唤醒配置。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -510,7 +533,8 @@
         "产品 multi_wakeup 支持",
         "至少 2 个额外唤醒词",
         "播放声卡",
-        "日志串口"
+        "日志串口",
+        "多唤醒同类算法模板"
       ],
       "side_effects": [
         "烧录固件",

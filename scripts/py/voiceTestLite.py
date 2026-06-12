@@ -973,7 +973,7 @@ class VoiceTest:
         self.ctrl_port = getattr(args, 'ctrl_port', '') or pretest_cfg.get("ctrlPort", "")
         self.ctrl_baud = pretest_cfg.get("ctrlBaudRate", 115200)
         self.power_on_cmds = pretest_cfg.get("powerOnCmds", [
-            "uut-switch2.off", "uut-switch1.off", "uut-switch1.on"
+            "uut-switch2.off", "uut-switch3.off", "uut-switch4.off", "uut-switch4.on", "sleep:3", "uut-switch2.on"
         ])
         self.audio_enable_cmds = pretest_cfg.get("audioEnableCmds", [
             "uut-pa.on", "pa-enable.set 0 17 0 1"
@@ -1263,6 +1263,12 @@ class VoiceTest:
         try:
             self.log.info(f"控制串口 {self.ctrl_port} 连接成功")
             for cmd in commands:
+                sleep_match = re.fullmatch(r"(?:sleep|wait|__sleep)[:=](\d+(?:\.\d+)?)", str(cmd).strip().lower())
+                if sleep_match:
+                    sleep_seconds = max(float(sleep_match.group(1)), 0.0)
+                    self.log.info(f"  等待: {sleep_seconds}s")
+                    time.sleep(sleep_seconds)
+                    continue
                 self.log.info(f"  发送命令: {cmd}")
                 ctrl_ser.write(f"{cmd}\r\n".encode("utf-8"))
                 time.sleep(delay_seconds)

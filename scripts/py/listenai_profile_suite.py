@@ -841,6 +841,10 @@ def make_voice_reg_rows(metadata: Dict[str, Any], web_config: Dict[str, Any]) ->
     config_base = ["firmware.study_config.enable eq true"]
     if selected_command:
         config_base.append(f"firmware.study_config.reg_commands[*].word contains {render_json(selected_command)}")
+    learn_count = len([item for item in (pack_args.get("studyRegCommands") or []) if str(item or "").strip()])
+    if learn_count:
+        config_base.append(f"firmware.study_config.reg_commands len_eq {learn_count}")
+        config_base.append(f"firmware.study_config.user_cfg.asr_study_register_max eq {learn_count}")
     if virtual_wake:
         config_base.append(f"firmware.study_config.reg_wakewords[*].word contains {render_json(virtual_wake)}")
 

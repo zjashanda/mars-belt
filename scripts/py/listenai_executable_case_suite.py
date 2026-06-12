@@ -13,8 +13,21 @@ from listenai_task_support import RUNTIME_ROOT, TASKS_ROOT, load_global_audio_ca
 
 DEFAULT_TEST_CATALOG = str(RUNTIME_ROOT / "catalog" / "listenai_test_case_catalog.json")
 DEFAULT_OUT_DIR = str(TASKS_ROOT / "listenai_executable_suite")
-DEFAULT_LOG_PORT = "/dev/ttyACM1" if platform.system() == "Linux" else "COM14"
+DEFAULT_LOG_PORT = "/dev/ttyACM0" if platform.system() == "Linux" else "COM14"
 DEFAULT_CTRL_PORT = "/dev/ttyACM4" if platform.system() == "Linux" else "COM15"
+DEFAULT_POWER_ON_CMDS = [
+    "uut-switch2.off",
+    "uut-switch3.off",
+    "uut-switch4.off",
+    "uut-switch4.on",
+    "sleep:3",
+    "uut-switch2.on",
+]
+LEGACY_POWER_ON_CMDS = [
+    ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
+    ["uut-switch3.off", "uut-switch4.off", "uut-switch4.on"],
+    ["uut-switch2.off", "uut-switch3.off", "uut-switch4.off", "uut-switch4.on", "uut-switch2.on"],
+]
 
 
 def as_bool(value: Any, default: bool = False) -> bool:
@@ -471,7 +484,7 @@ def build_device_info_template(web_config: Dict[str, Any], context: Dict[str, An
             "enabled": False,
             "ctrlPort": "",
             "ctrlBaudRate": 115200,
-            "powerOnCmds": ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
+            "powerOnCmds": list(DEFAULT_POWER_ON_CMDS),
             "cmdDelay": 0.3,
             "bootWait": 5,
         },
@@ -516,7 +529,9 @@ def apply_runtime_ports(device_info: Dict[str, Any], log_port: str = "", ctrl_po
     pretest["enabled"] = bool(selected_ctrl_port)
     pretest["ctrlPort"] = selected_ctrl_port
     pretest["ctrlBaudRate"] = int(pretest.get("ctrlBaudRate") or 115200)
-    pretest.setdefault("powerOnCmds", ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"])
+    current_power_cmds = pretest.get("powerOnCmds")
+    if not current_power_cmds or current_power_cmds in LEGACY_POWER_ON_CMDS:
+        pretest["powerOnCmds"] = list(DEFAULT_POWER_ON_CMDS)
     pretest.setdefault("cmdDelay", 0.3)
     pretest.setdefault("bootWait", 5)
     return device_info

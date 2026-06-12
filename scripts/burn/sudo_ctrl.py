@@ -58,12 +58,26 @@ def _expected_success_marker(command):
     return f"switch_idx{index}_set: {state}"
 
 
+def _sleep_seconds(command):
+    text = command.strip().lower()
+    match = re.fullmatch(r"(?:sleep|wait|__sleep)[:=](\d+(?:\.\d+)?)", text)
+    if not match:
+        return None
+    return max(float(match.group(1)), 0.0)
+
+
 def send_commands(port_name, baud, commands, cmd_delay_ms=100, prompt_timeout_ms=2000):
     port = serial.Serial(port_name, baud, timeout=0.1, write_timeout=1.0)
     try:
         time.sleep(0.2)
         total = len(commands)
         for index, cmd in enumerate(commands, start=1):
+            sleep_seconds = _sleep_seconds(cmd)
+            if sleep_seconds is not None:
+                print(f"CTRL SLEEP {index}/{total}: {sleep_seconds}s")
+                time.sleep(sleep_seconds)
+                print(f"CTRL OK {index}/{total}: {cmd}")
+                continue
             _drain(port)
             print(f"CTRL SEND {index}/{total}: {cmd}")
             port.write((cmd + "\r\n").encode("ascii"))
