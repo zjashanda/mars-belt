@@ -1,0 +1,49 @@
+{
+  "name": "3021_fan_ui_smoke_verified_20260612",
+  "purpose": "Known-good CSK3021 fan UI package for bench smoke, burn-chain validation, and fault isolation.",
+  "package": "3021_fan_ui_smoke_verified_20260612.zip",
+  "sha256": "a7ccb7c3853cb327e31963a18749c661218bf5671b37f433b56023e5ea0f607f",
+  "size_bytes": 2920846,
+  "zip_test": "ok",
+  "firmware_entry": "Standard_product/fw.bin",
+  "firmware_size_bytes": 1758128,
+  "source_artifact": "artifacts/device-check/3021-ui-burn-20260612-145600/ui_fan_pkg01.zip",
+  "validated_on": "2026-06-12",
+  "validation_evidence": {
+    "single_burn": "artifacts/device-check/3021-ui-burn-20260612-145600/",
+    "repeat_burn_2cycles": "artifacts/device-check/3021-repeat-burn-20260612-151452/repeat_burn_2cycles_summary.json"
+  },
+  "bench_mapping": {
+    "log_uart": "/dev/ttyACM0@115200",
+    "burn_uart": "/dev/ttyACM0@460800",
+    "protocol_uart": "/dev/ttyACM2@9600",
+    "unused_uart": "/dev/ttyACM1",
+    "control_uart": "/dev/ttyACM4@115200",
+    "power_switch": "uut-switch1",
+    "protocol_gate_switch": "uut-switch2",
+    "boot_switch": "uut-switch3",
+    "audio_device_key": "VID_8765&PID_5678:USB_0_1_3_1_0"
+  },
+  "expected_runtime_markers": [
+    "APP version: 3.0.1",
+    "config version: V-2026.06.12_13",
+    "Wakeup",
+    "xiao3 ling2 xiao3 ling2",
+    "da3 kai1 feng1 shan4",
+    "zui4 da4 yin1 liang4",
+    "[RX]",
+    "[TX]",
+    "play id"
+  ],
+  "protocol_smoke_frame": {
+    "description": "播报语 rec_protocol, should produce [RX] and mini-player play id",
+    "hex": "A5 FA 00 82 71 00 92 FB"
+  },
+  "voice_smoke_files": [
+    "scripts/wavSource/小聆小聆.mp3",
+    "scripts/wavSource/打开风扇.mp3",
+    "scripts/wavSource/最大音量.mp3"
+  ],
+  "firmware_sha256": "f2f3a199e023848862b151f8482ee7ce394517d2eb757c372976602c0e2128d9",
+  "config_entry": "Standard_product/web_config.json"
+}

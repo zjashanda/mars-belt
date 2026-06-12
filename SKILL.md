@@ -43,8 +43,8 @@ system: |
     - 再把目标固件复制到 `scripts/burn/app.bin`
     - `Uart_Burn_Tool` 只允许烧录 `scripts/burn/app.bin`
     - 禁止把任意外部 `.bin` 路径直接喂给烧录工具
-  17. 当前本地 3021 台架默认口径：日志 `/dev/ttyACM0@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM0@460800`；电源控制 `uut-switch4`，boot 控制 `uut-switch3`，协议口开关 `uut-switch2`。
-  18. 3021 正常运行态上电必须使用协议口门控：`uut-switch2.off -> uut-switch3.off -> uut-switch4.off -> uut-switch4.on -> wait 3s -> uut-switch2.on`。脚本化配置中使用 `sleep:3` 表示该等待点；烧录进 boot 流程仍保持 `uut-switch4.off -> uut-switch3.on -> uut-switch4.on -> uut-switch3.off`，烧录阶段不要额外操作 `uut-switch2`。
+  17. 当前本地 3021 台架默认口径：日志 `/dev/ttyACM0@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM0@460800`；`/dev/ttyACM1` 为空口不要使用；电源控制 `uut-switch1`，协议连接门控 `uut-switch2`，boot 控制 `uut-switch3`。
+  18. 3021 正常运行态上电必须使用协议口门控：`uut-switch2.off -> uut-switch3.off -> uut-switch1.off -> uut-switch1.on -> wait 3s -> uut-switch2.on`。脚本化配置中使用 `sleep:3` 表示该等待点；烧录进 boot 前先执行 `uut-switch2.off` 断开协议口，再执行 `uut-switch1.off -> uut-switch3.on -> uut-switch1.on -> uut-switch3.off`，烧录后按正常门控上电恢复。
   19. 根目录 `orion.skilltest.json` 是 Augur/Orion 展示“可测模块 -> 测试方案 -> 自然语言用例 -> 执行证据”的结构化索引；新增、删除或调整平台功能测试模块、入口脚本、证据口径、风险等级、默认用例时，必须同步更新该 JSON，并执行 `python3 -m json.tool orion.skilltest.json` 校验。
   20. 同步 git 前必须先构建可迁移发布副本：包含 `SKILL.md`、`orion.skilltest.json`、必要脚本、模板、参考资料和工具；排除 `TOOLS.md`、`deviceInfo_generated.json`、`plan.md`、`artifacts/`、烧录临时 `app.bin`、缓存和本机结果。其他 PC 拉取后应能基于 `TOOLS.example.md` 与 `deviceInfo_generated.example.json` 补齐本机配置后直接使用。
   21. 生成报告、JSON、CSV、Markdown、HTML、xlsx、zip 或其他交付文件后，必须做可打开性和编码校验，避免其他环境打开乱码或文件损坏；校验结果要写入结果目录或 `plan.md`。
@@ -52,6 +52,7 @@ system: |
   23. 后续平台打包测试默认使用“固定产品 + 同产品多 release + 最小规则矩阵”：每个垂类先固定一个代表品类，按产品能力生成 3/4 个组合包；若只支持基础/多唤醒通常 3 包，若同时支持语音注册和多唤醒通常 4 包。打包完成后必须按 release 实际参数生成真机验证方案。
   24. UI 打包时如果平台为空或目标产品不存在，必须通过 UI 新建一个产品；同一产品不同配置必须继续在该产品下生成多个 release，不得因为配置不同再新建产品。
   25. 每个 release 必须填写简短版本描述，描述当前配置向量即可，例如 `默认+指定唤醒`、`左边界+循环唤醒`、`右边界+协议唤醒`、`默认+指定学习+指定唤醒`、`关闭隔离`。描述要短，不写产品名、长版本号或冗余说明；若 UI 当前不暴露版本描述输入，必须记录为 UI 限制，禁止用 API 补写后冒充 UI 结果。
+  26. 3021 设备/烧录/协议/语音链路异常时，优先烧录已验证的基础冒烟固件 `assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip` 做对照。该固件和台架控制逻辑必须随 git 同步，不能作为 artifacts 临时文件删除；详细隔离思路、命令和期望标记见 `references/3021_known_good_smoke_firmware.md`。
 
 ---
 
@@ -76,6 +77,7 @@ system: |
 - UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为只读辅助探测或非 UI 健壮性附录。
 - UI-only 固件打包必须每次重新读取平台 UI 当前页面、下拉选项和联动结果；历史导出的产品/芯片/语言/SDK 矩阵只能作为参考，不能作为脚本内置死数据或后续打包输入源。详细流程见 `references/ui_firmware_packaging_workflow.md`。
 - 平台固件打包默认按“最小组合包”设计矩阵：首包默认配置验证主链路，后续包组合覆盖基础边界、协议、保存项、多唤醒模式、语音注册模式和模板数/重试次数；详细参考 `references/platform_firmware_minimal_packaging_strategy.md`。
+- 3021 已验证冒烟固件、台架控制逻辑和问题隔离流程见 `references/3021_known_good_smoke_firmware.md`；该 zip 资产位于 `assets/firmware/3021-smoke/`，必须随 git 发布。
 - 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
 - 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
 - 严格 UI-only 打包中，产品创建也必须通过 UI；平台为空或目标产品不存在时，按页面实时联动新建产品，不允许使用旧 API 参数创建隐藏产品壳。API/options 只能作为只读排查；非严格兼容性兜底必须单独标记，不能计入 UI-only 主结论。
@@ -490,15 +492,15 @@ recovery:
   burn_control:
     logic: |
       烧录控制只允许使用当前 switch 命令：
-      - 当前 3021 台架进入烧录模式: `uut-switch4.off` → `uut-switch3.on` → `uut-switch4.on` → `uut-switch3.off`
-      - 当前 3021 台架烧录后恢复运行态: `uut-switch2.off` → `uut-switch3.off` → `uut-switch4.off` → `uut-switch4.on` → 等待 3 秒 → `uut-switch2.on`
-      - 自动化 `powerOnCmds` 中用 `sleep:3` 固化“等待 3 秒”步骤，不能把 `uut-switch4.on` 与 `uut-switch2.on` 连续紧贴下发
+      - 当前 3021 台架进入烧录模式: 先 `uut-switch2.off` 断开协议口，再执行 `uut-switch1.off` → `uut-switch3.on` → `uut-switch1.on` → `uut-switch3.off`
+      - 当前 3021 台架烧录后恢复运行态: `uut-switch2.off` → `uut-switch3.off` → `uut-switch1.off` → `uut-switch1.on` → 等待 3 秒 → `uut-switch2.on`
+      - 自动化 `powerOnCmds` 中用 `sleep:3` 固化“等待 3 秒”步骤，不能把 `uut-switch1.on` 与 `uut-switch2.on` 连续紧贴下发
       - `uut-switch2` 是协议口开关，不是 3021 boot 线；烧录进 boot 阶段不要操作 `uut-switch2`
       - 历史 3122 台架可能使用 `uut-switch2` 作为 boot 线；未确认前不得把 3122 的 `uut-switch2` 逻辑套到 3021
       默认按单次连续会话下发完整序列，不拆成其他替代流程
-      若 ROM 握手异常，先恢复正常上电基线，再按
-      `reboot -> 等控制口恢复 -> 烧录四步 -> Uart_Burn_Tool`
-      复现人工收敛链路
+      若 ROM 握手异常，先恢复正常上电基线，再按当前 `switch2.off + switch1/switch3` 烧录链路复现；
+      若新打包固件异常，优先烧录 `assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip` 做已知可用对照，
+      以区分新包配置问题、设备/线序问题、协议门控问题或声卡/识别链路问题
       禁止新增“其他花里胡哨的”控制方式，如额外脚本、替代切换序列、非当前 switch 控制链路
 
   validate:

@@ -561,7 +561,7 @@ def generate_email_report(task_dir: Path, result_dir: Path) -> None:
                 <div class="info-item"><label>固件版本</label><span>{escape(str(version))}</span></div>
                 <div class="info-item"><label>语言</label><span>{escape(language)}</span></div>
                 <div class="info-item"><label>测试时间</label><span>{escape(test_time)}</span></div>
-                <div class="info-item"><label>串口配置</label><span>ctrl=/dev/ttyACM4 log=/dev/ttyACM0 protocol=/dev/ttyACM2 burn=/dev/ttyACM0 power=uut-switch4 boot=uut-switch3 protocolGate=uut-switch2</span></div>
+                <div class="info-item"><label>串口配置</label><span>ctrl=/dev/ttyACM4 log=/dev/ttyACM0 protocol=/dev/ttyACM2 burn=/dev/ttyACM0 power=uut-switch1 boot=uut-switch3 protocolGate=uut-switch2</span></div>
             </div>
             <div class="result-box{' fail' if conclusion != 'PASS' else ''}">
                 <div class="pass-rate">{pass_rate}%</div>
@@ -2330,7 +2330,7 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("--burn-mode-wait-ms", type=int, default=2000)
     burn.add_argument("--pre-burn-reboot", action="store_true", help="Send reboot on ctrl port before the 4-step burn entry flow")
     burn.add_argument("--boot-switch", default=DEFAULT_BOOT_SWITCH, help="Control switch used for boot strap; current 3021 bench uses uut-switch3")
-    burn.add_argument("--power-switch", default=DEFAULT_POWER_SWITCH, help="Control switch used for target power; current 3021 bench uses uut-switch4")
+    burn.add_argument("--power-switch", default=DEFAULT_POWER_SWITCH, help="Control switch used for target power; current 3021 bench uses uut-switch1")
     burn.add_argument("--protocol-switch", default=DEFAULT_PROTOCOL_SWITCH, help="Protocol UART gate switch; default disconnects protocol before normal boot and reconnects after boot")
     burn.add_argument("--protocol-gate-wait-seconds", type=float, default=3.0, help="Wait after normal power-on before reconnecting protocol switch")
     burn.add_argument("--boot-wait-seconds", type=int, default=5)

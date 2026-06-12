@@ -4,7 +4,7 @@
   "name": "Mars Belt Platform Validation",
   "summary": "MarsPlatform 固件打包、合成管理、平台接口、语音注册、多唤醒、设备烧录与运行态验证的模块化 SkillTest 资料。",
   "version": "1.0.0",
-  "updated_at": "2026-06-11",
+  "updated_at": "2026-06-12",
   "flow": [
     "选择 Agent 节点",
     "配置平台 token / UI 登录态 / 设备串口声卡",
@@ -275,9 +275,9 @@
       "id": "device_burn_runtime_validation",
       "module": "device_runtime",
       "name": "设备烧录与运行态验证",
-      "summary": "把平台产物烧录到本地设备，使用 3021 switch2 协议口门控上电策略验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
+      "summary": "把平台产物或已验证 3021 冒烟固件烧录到本地设备，使用 switch2 协议口门控和 switch1 电源控制验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
       "requirement": "证明固件不仅能打包，还能在目标设备上稳定启动并按配置工作。",
-      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按 switch4/switch3 进入 boot 烧录；烧录后正常上电前先 switch2.off 断开协议口，上电稳定后 switch2.on 接回协议口，再执行 generate-suite/validate，采集日志、协议、音频和报告证据。",
+      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按 switch2.off + switch1/switch3 进入 boot 烧录；烧录后正常上电前先 switch2.off 断开协议口，上电稳定后 switch2.on 接回协议口。若设备链路异常，先烧录 assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip 做已知可用对照，再判断是新包、设备、线序还是控制链路问题。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -295,7 +295,7 @@
         "播放声卡",
         "设备供电/boot 线正常",
         "协议口开关 uut-switch2",
-        "3021 门控上电：switch2.off -> switch3.off -> switch4.off -> switch4.on -> wait -> switch2.on"
+        "3021 门控上电：switch2.off -> switch3.off -> switch1.off -> switch1.on -> wait -> switch2.on"
       ],
       "side_effects": [
         "设备上下电",
@@ -319,9 +319,9 @@
           "steps": [
             "清空 scripts/burn/app.bin。",
             "从 zip 提取或复制目标固件到 app.bin。",
-            "执行 switch4.off、switch3.on、switch4.on、switch3.off 进入 boot；烧录阶段不操作 switch2。",
+            "执行 switch2.off 后执行 switch1.off、switch3.on、switch1.on、switch3.off 进入 boot；烧录前先用 switch2.off 断开协议口。",
             "调用 Uart_Burn_Tool 烧录 app.bin。",
-            "烧录后执行 switch2.off、switch3.off、switch4.off、switch4.on，等待 3 秒后 switch2.on 恢复协议口。"
+            "烧录后执行 switch2.off、switch3.off、switch1.off、switch1.on，等待 3 秒后 switch2.on 恢复协议口。"
           ],
           "expected_results": [
             "烧录日志包含 ROM loader、MD5、END 成功标记。",
@@ -352,7 +352,7 @@
             "日志/协议/声卡链路可用"
           ],
           "steps": [
-            "预处理上电使用 switch2.off -> switch3.off -> switch4.off -> switch4.on -> wait -> switch2.on，避免协议口拉低导致误进 boot。",
+            "预处理上电使用 switch2.off -> switch3.off -> switch1.off -> switch1.on -> wait -> switch2.on，避免协议口拉低导致误进 boot。",
             "生成 suite 和 deviceInfo。",
             "执行预处理：上电、等待启动、设置 loglevel、等待识别就绪。",
             "执行配置断言和基础功能用例。",
@@ -378,6 +378,41 @@
             "设备不支持当前功能"
           ],
           "estimated_minutes": 30
+        },
+        {
+          "id": "known_good_3021_smoke_package",
+          "title": "3021 已知可用冒烟固件对照验证",
+          "objective": "当烧录、日志、协议或语音链路异常时，烧录仓库内已验证固件包做对照，快速区分新包问题、设备问题、线序问题或控制链路问题。",
+          "preconditions": [
+            "3021 台架口线按 skill 默认映射连接",
+            "声卡 VID_8765&PID_5678:USB_0_1_3_1_0 可用",
+            "已验证固件包存在于 assets/firmware/3021-smoke/"
+          ],
+          "steps": [
+            "烧录 assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip。",
+            "按 switch2 门控恢复上电并设置 loglevel 4。",
+            "用 ACM2@9600 发送 A5 FA 00 82 71 00 92 FB，确认 RX 与 mini-player play id。",
+            "用指定声卡播放 小聆小聆、打开风扇、最大音量，确认 Wakeup、intent、TX 和 play id。"
+          ],
+          "expected_results": [
+            "烧录日志包含 END、MD5、ROM loader 成功标记。",
+            "日志口可用，协议播报和语音识别链路均正常。"
+          ],
+          "evidence": [
+            "burn log",
+            "runtime serial log",
+            "protocol RX log",
+            "audio playback log"
+          ],
+          "pass_criteria": "已知可用包通过全部基础链路；若新包失败而已知包通过，优先归因新包/配置。",
+          "fail_criteria": "已知可用包也失败，优先定位设备供电、boot、控制、串口、协议门控或声卡链路。",
+          "blocked_conditions": [
+            "控制口不可用",
+            "烧录口不可用",
+            "设备未供电",
+            "声卡不存在"
+          ],
+          "estimated_minutes": 12
         }
       ]
     },

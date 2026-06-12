@@ -315,7 +315,7 @@ def mk_device(config: Dict[str, Any], project_name: str, log_port: str, ctrl_por
     pretest["ctrlBaudRate"] = 115200
     pretest.setdefault(
         "powerOnCmds",
-        ["uut-switch2.off", "uut-switch3.off", "uut-switch4.off", "uut-switch4.on", "sleep:3", "uut-switch2.on"],
+        ["uut-switch2.off", "uut-switch3.off", "uut-switch1.off", "uut-switch1.on", "sleep:3", "uut-switch2.on"],
     )
     pretest.setdefault("cmdDelay", 0.3)
     pretest.setdefault("bootWait", 5)

@@ -124,9 +124,10 @@ enter_burn_mode()
 {
     log "进入烧录模式"
 
-    send_cmd "$CTRL_PORT" "uut-switch4.off"
+    send_cmd "$CTRL_PORT" "uut-switch2.off"
+    send_cmd "$CTRL_PORT" "uut-switch1.off"
     send_cmd "$CTRL_PORT" "uut-switch3.on"
-    send_cmd "$CTRL_PORT" "uut-switch4.on"
+    send_cmd "$CTRL_PORT" "uut-switch1.on"
     send_cmd "$CTRL_PORT" "uut-switch3.off"
 
     sleep 2
@@ -141,8 +142,8 @@ exit_burn_mode()
     log "退出烧录模式"
     send_cmd "$CTRL_PORT" "uut-switch2.off"
     send_cmd "$CTRL_PORT" "uut-switch3.off"
-    send_cmd "$CTRL_PORT" "uut-switch4.off"
-    send_cmd "$CTRL_PORT" "uut-switch4.on"
+    send_cmd "$CTRL_PORT" "uut-switch1.off"
+    send_cmd "$CTRL_PORT" "uut-switch1.on"
 
     sleep 3
 

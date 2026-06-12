@@ -18,15 +18,15 @@ DEFAULT_CTRL_PORT = "/dev/ttyACM4" if platform.system() == "Linux" else "COM15"
 DEFAULT_POWER_ON_CMDS = [
     "uut-switch2.off",
     "uut-switch3.off",
-    "uut-switch4.off",
-    "uut-switch4.on",
+    "uut-switch1.off",
+    "uut-switch1.on",
     "sleep:3",
     "uut-switch2.on",
 ]
 LEGACY_POWER_ON_CMDS = [
     ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
-    ["uut-switch3.off", "uut-switch4.off", "uut-switch4.on"],
-    ["uut-switch2.off", "uut-switch3.off", "uut-switch4.off", "uut-switch4.on", "uut-switch2.on"],
+    ["uut-switch3.off", "uut-switch1.off", "uut-switch1.on"],
+    ["uut-switch2.off", "uut-switch3.off", "uut-switch1.off", "uut-switch1.on", "uut-switch2.on"],
 ]
 
 
