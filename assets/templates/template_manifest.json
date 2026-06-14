@@ -2,6 +2,7 @@
   "generatedBy": "scripts/ui/generate_algo_template_variants.py",
   "schemaVersion": 2,
   "dataSourcePrinciple": "Generated templates are fallback test data. Real UI packaging must confirm current UI options and prefer the latest UI-downloaded template as base.",
+  "voiceRegControlRule": "语音注册控制词不得在算法模板词条预处理中作为普通协议命令重复导入；学习/删除/退出控制入口必须由 UI 语音注册配置生成 special_type=语音注册控制相关 词条。",
   "parameterRequirements": [
     {
       "group": "基础配置",
@@ -386,7 +387,7 @@
       "id": "zh_voice_reg_specific",
       "file": "assets/templates/algo_zh_voice_reg_specific.xlsx",
       "language": "zh",
-      "purpose": "语音注册指定学习：学习命令词/唤醒词、删除、退出、全部删除、可学习目标命令。",
+      "purpose": "语音注册指定学习：基础宿主动作、可学习目标命令；学习/删除/退出控制词由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "voiceRegEnable=true",
         "releaseRegist.registMode=specificLearn",
@@ -442,15 +443,15 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：负例不能使用语音注册控制词，避免误触发真实功能。",
-      "rows": 26,
+      "risk": "中：模板内不能重复导入普通协议控制词。",
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx"
     },
     {
       "id": "zh_voice_reg_continuous",
       "file": "assets/templates/algo_zh_voice_reg_continuous.xlsx",
       "language": "zh",
-      "purpose": "语音注册连续学习：连续学习入口、直学/自动下一条、两步删除命令词、模板满后清理再学。",
+      "purpose": "语音注册连续学习：基础宿主动作、可学习目标命令；连续学习入口由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "releaseRegist.registMode=contLearn",
         "连续学习状态机回归"
@@ -504,14 +505,14 @@
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
       "risk": "中：学习态需等待提示播报结束和算法重建完成。",
-      "rows": 26,
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx"
     },
     {
       "id": "zh_voice_reg_boundary_delete",
       "file": "assets/templates/algo_zh_voice_reg_boundary_delete.xlsx",
       "language": "zh",
-      "purpose": "语音注册边界/删除：字数上下限、重试次数、模板上限、删除命令/唤醒词/全部删除闭环。",
+      "purpose": "语音注册边界/删除：字数上下限、重试次数、模板上限、删除闭环；删除入口由 UI special 词条提供。",
       "recommendedFor": [
         "语音注册边界包",
         "删除闭环包",
@@ -566,8 +567,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：字数边界语料运行时合成，模板只提供入口和宿主动作。",
-      "rows": 28,
+      "risk": "中：字数边界语料运行时合成，模板只提供宿主动作。",
+      "rows": 21,
       "sourceBase": "assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx"
     },
     {
@@ -626,7 +627,7 @@
       "id": "zh_full_feature_stateful",
       "file": "assets/templates/algo_zh_full_feature_stateful.xlsx",
       "language": "zh",
-      "purpose": "综合状态包：基础功能 + 协议主动/被动 + 多唤醒指定切换 + 语音注册控制词。",
+      "purpose": "综合状态包：基础功能 + 协议主动/被动 + 多唤醒指定切换 + 语音注册宿主动作。",
       "recommendedFor": [
         "全功能保持开启包",
         "功能耦合冒烟",
@@ -694,8 +695,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "高：词量较多，3021 上如出现内存超限，应拆分为专项模板而不是压缩结论。",
-      "rows": 37,
+      "risk": "高：词量较多；语音注册控制词必须由 UI special 配置生成，3021 上如出现内存超限应拆分专项模板定位。",
+      "rows": 30,
       "sourceBase": "assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx"
     },
     {
@@ -958,7 +959,7 @@
       "id": "en_voice_reg_specific",
       "file": "assets/templates/algo_en_voice_reg_specific.xlsx",
       "language": "en",
-      "purpose": "语音注册指定学习：学习命令词/唤醒词、删除、退出、全部删除、可学习目标命令。",
+      "purpose": "语音注册指定学习：基础宿主动作、可学习目标命令；学习/删除/退出控制词由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "voiceRegEnable=true",
         "releaseRegist.registMode=specificLearn",
@@ -1014,15 +1015,15 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：负例不能使用语音注册控制词，避免误触发真实功能。",
-      "rows": 26,
+      "risk": "中：模板内不能重复导入普通协议控制词。",
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_算法配置英文模板.xlsx"
     },
     {
       "id": "en_voice_reg_continuous",
       "file": "assets/templates/algo_en_voice_reg_continuous.xlsx",
       "language": "en",
-      "purpose": "语音注册连续学习：连续学习入口、直学/自动下一条、两步删除命令词、模板满后清理再学。",
+      "purpose": "语音注册连续学习：基础宿主动作、可学习目标命令；连续学习入口由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "releaseRegist.registMode=contLearn",
         "连续学习状态机回归"
@@ -1076,14 +1077,14 @@
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
       "risk": "中：学习态需等待提示播报结束和算法重建完成。",
-      "rows": 26,
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_算法配置英文模板.xlsx"
     },
     {
       "id": "en_voice_reg_boundary_delete",
       "file": "assets/templates/algo_en_voice_reg_boundary_delete.xlsx",
       "language": "en",
-      "purpose": "语音注册边界/删除：字数上下限、重试次数、模板上限、删除命令/唤醒词/全部删除闭环。",
+      "purpose": "语音注册边界/删除：字数上下限、重试次数、模板上限、删除闭环；删除入口由 UI special 词条提供。",
       "recommendedFor": [
         "语音注册边界包",
         "删除闭环包",
@@ -1138,8 +1139,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：字数边界语料运行时合成，模板只提供入口和宿主动作。",
-      "rows": 28,
+      "risk": "中：字数边界语料运行时合成，模板只提供宿主动作。",
+      "rows": 21,
       "sourceBase": "assets/templates/聆思科技_算法配置英文模板.xlsx"
     },
     {
@@ -1198,7 +1199,7 @@
       "id": "en_full_feature_stateful",
       "file": "assets/templates/algo_en_full_feature_stateful.xlsx",
       "language": "en",
-      "purpose": "综合状态包：基础功能 + 协议主动/被动 + 多唤醒指定切换 + 语音注册控制词。",
+      "purpose": "综合状态包：基础功能 + 协议主动/被动 + 多唤醒指定切换 + 语音注册宿主动作。",
       "recommendedFor": [
         "全功能保持开启包",
         "功能耦合冒烟",
@@ -1266,8 +1267,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "高：词量较多，3021 上如出现内存超限，应拆分为专项模板而不是压缩结论。",
-      "rows": 37,
+      "risk": "高：词量较多；语音注册控制词必须由 UI special 配置生成，3021 上如出现内存超限应拆分专项模板定位。",
+      "rows": 30,
       "sourceBase": "assets/templates/聆思科技_算法配置英文模板.xlsx"
     },
     {
@@ -1378,7 +1379,7 @@
       "id": "zh_voice_register",
       "file": "assets/templates/algo_zh_voice_register.xlsx",
       "language": "zh",
-      "purpose": "兼容旧文件名，内容等同于 zh_voice_reg_specific: 语音注册指定学习：学习命令词/唤醒词、删除、退出、全部删除、可学习目标命令。",
+      "purpose": "兼容旧文件名，内容等同于 zh_voice_reg_specific: 语音注册指定学习：基础宿主动作、可学习目标命令；学习/删除/退出控制词由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "voiceRegEnable=true",
         "releaseRegist.registMode=specificLearn",
@@ -1434,8 +1435,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：负例不能使用语音注册控制词，避免误触发真实功能。",
-      "rows": 26,
+      "risk": "中：模板内不能重复导入普通协议控制词。",
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_命令词播报词协议配置表V1.0_中文模板.xlsx",
       "compatAliasFor": "zh_voice_reg_specific"
     },
@@ -1547,7 +1548,7 @@
       "id": "en_voice_register",
       "file": "assets/templates/algo_en_voice_register.xlsx",
       "language": "en",
-      "purpose": "兼容旧文件名，内容等同于 en_voice_reg_specific: 语音注册指定学习：学习命令词/唤醒词、删除、退出、全部删除、可学习目标命令。",
+      "purpose": "兼容旧文件名，内容等同于 en_voice_reg_specific: 语音注册指定学习：基础宿主动作、可学习目标命令；学习/删除/退出控制词由 UI 语音注册配置生成 special 词条。",
       "recommendedFor": [
         "voiceRegEnable=true",
         "releaseRegist.registMode=specificLearn",
@@ -1603,8 +1604,8 @@
         "releaseRegist.recProtocol",
         "releaseRegistConfig.*.triggers.*.stages.*.(condition|reply|delReply)"
       ],
-      "risk": "中：负例不能使用语音注册控制词，避免误触发真实功能。",
-      "rows": 26,
+      "risk": "中：模板内不能重复导入普通协议控制词。",
+      "rows": 19,
       "sourceBase": "assets/templates/聆思科技_算法配置英文模板.xlsx",
       "compatAliasFor": "en_voice_reg_specific"
     }

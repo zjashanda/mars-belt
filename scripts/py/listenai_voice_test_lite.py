@@ -319,8 +319,6 @@ def config_invariant_rows(context: Dict[str, Any]) -> List[Dict[str, str]]:
 
     mode = str(study_cfg.get("mode") or study_cfg.get("type") or "").strip()
     is_specific = "指定" in mode or mode.lower() == "specificlearn"
-    if not is_specific:
-        return []
 
     user_cfg = study_cfg.get("user_cfg") or {}
     reg_commands = [item for item in (study_cfg.get("reg_commands") or []) if isinstance(item, dict)]
@@ -343,31 +341,84 @@ def config_invariant_rows(context: Dict[str, Any]) -> List[Dict[str, str]]:
     ]
 
     rows: List[Dict[str, str]] = []
-    for case_id, title, actual_count, configured_max, path in checks:
-        if configured_max is None:
-            verdict = "ConfigFail"
-            detail = f"{path} 缺失或非整数；指定学习模式无法确认模板上限"
-        elif actual_count != configured_max:
-            verdict = "ConfigFail"
-            detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}；二者必须一致"
-        else:
-            verdict = "OK"
-            detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}"
-        rows.append(
-            {
-                "用例编号": case_id,
-                "原始参数": path,
-                "功能模块": "语音注册配置一致性",
-                "测试类型": "配置断言",
-                "执行器": "config-only",
-                "命令词": "",
-                "打包参数": "{}",
-                "配置断言": f"{path} eq {configured_max if configured_max is not None else 'MISSING'}",
-                "运行断言": "指定学习模式下模板上限必须与指定学习清单数量一致",
-                "执行结果": verdict,
-                "结果详情": detail,
-            }
-        )
+    if is_specific:
+        for case_id, title, actual_count, configured_max, path in checks:
+            if configured_max is None:
+                verdict = "ConfigFail"
+                detail = f"{path} 缺失或非整数；指定学习模式无法确认模板上限"
+            elif actual_count != configured_max:
+                verdict = "ConfigFail"
+                detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}；二者必须一致"
+            else:
+                verdict = "OK"
+                detail = f"{path}={configured_max}，实际指定学习清单数量={actual_count}"
+            rows.append(
+                {
+                    "用例编号": case_id,
+                    "原始参数": path,
+                    "功能模块": "语音注册配置一致性",
+                    "测试类型": "配置断言",
+                    "执行器": "config-only",
+                    "命令词": "",
+                    "打包参数": "{}",
+                    "配置断言": f"{path} eq {configured_max if configured_max is not None else 'MISSING'}",
+                    "运行断言": "指定学习模式下模板上限必须与指定学习清单数量一致",
+                    "执行结果": verdict,
+                    "结果详情": detail,
+                }
+            )
+
+    reserved_control_intents = {
+        "学习命令词",
+        "学习唤醒词",
+        "删除命令词",
+        "删除唤醒词",
+        "删除全部命令词",
+        "全部删除",
+        "退出学习",
+        "退出删除",
+        "Learn Command",
+        "Learn Wake Word",
+        "Delete Command",
+        "Delete Wake Word",
+        "Delete All Commands",
+        "Delete All",
+        "Exit Learning",
+        "Exit Deletion",
+        "Exit Deleting",
+    }
+    asr_cmds = [item for item in (context.get("asr_cmds") or []) if isinstance(item, dict)]
+    normal_duplicates: List[str] = []
+    for item in asr_cmds:
+        intent = str(item.get("intent") or "").strip()
+        if intent not in reserved_control_intents:
+            continue
+        special_type = str(item.get("special_type") or item.get("specialType") or "").strip()
+        has_protocol = bool(item.get("snd_protocol") or item.get("rec_protocol") or item.get("sndProtocol") or item.get("recProtocol"))
+        if "语音注册控制相关" not in special_type and "虚拟语音注册唤醒意图" not in special_type and has_protocol:
+            normal_duplicates.append(f"{intent}(id={item.get('id')})")
+    verdict = "ConfigFail" if normal_duplicates else "OK"
+    detail = (
+        "存在普通协议命令与语音注册控制词重名，会抢先命中普通命令，导致无法进入学习/删除状态："
+        + "、".join(normal_duplicates)
+        if normal_duplicates
+        else "语音注册控制词未作为普通协议命令重复导入"
+    )
+    rows.append(
+        {
+            "用例编号": "INVARIANT-VOICE-REG-003",
+            "原始参数": "_ver_list[0].asr_cmds",
+            "功能模块": "语音注册配置一致性",
+            "测试类型": "配置断言",
+            "执行器": "config-only",
+            "命令词": "",
+            "打包参数": "{}",
+            "配置断言": "语音注册控制词不可同时作为普通协议命令存在",
+            "运行断言": "学习/删除入口必须命中 special_type=语音注册控制相关，否则只能发送普通协议帧",
+            "执行结果": verdict,
+            "结果详情": detail,
+        }
+    )
     return rows
 
 

@@ -53,6 +53,7 @@ system: |
   24. UI 打包时如果平台为空或目标产品不存在，必须通过 UI 新建一个产品；同一产品不同配置必须继续在该产品下生成多个 release，不得因为配置不同再新建产品。
   25. 每个 release 必须填写简短版本描述，描述当前配置向量即可，例如 `默认+指定唤醒`、`左边界+循环唤醒`、`右边界+协议唤醒`、`默认+指定学习+指定唤醒`、`关闭隔离`。描述要短，不写产品名、长版本号或冗余说明；若 UI 当前不暴露版本描述输入，必须记录为 UI 限制，禁止用 API 补写后冒充 UI 结果。
   26. 3021 设备/烧录/协议/语音链路异常时，优先烧录已验证的基础冒烟固件 `assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip` 做对照。该固件和台架控制逻辑必须随 git 同步，不能作为 artifacts 临时文件删除；详细隔离思路、命令和期望标记见 `references/3021_known_good_smoke_firmware.md`。
+  27. 平台打包/固件/SDK 真机验证报告必须按“标题下测试结论 -> 测试目的 -> 测试方案 -> 测试用例和结果 -> 测试问题与分析 -> 证据文件”结构输出；详细规则见 `references/platform_test_report_writing_standard.md`。报告必须量化覆盖范围和结果，不能只写“全部通过”。
 
 ---
 
@@ -80,6 +81,7 @@ system: |
 - 3021 已验证冒烟固件、台架控制逻辑和问题隔离流程见 `references/3021_known_good_smoke_firmware.md`；该 zip 资产位于 `assets/firmware/3021-smoke/`，必须随 git 发布。
 - 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
 - 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
+- 平台打包、固件真机、SDK 编译和 app.bin 运行态验证报告必须先按证据生成详细 Markdown，再按 `references/platform_test_report_writing_standard.md` 生成结构化 HTML：结论放标题下，之后依次写测试目的、测试方案、测试用例和结果、测试问题与分析、证据文件。
 - 严格 UI-only 打包中，产品创建也必须通过 UI；平台为空或目标产品不存在时，按页面实时联动新建产品，不允许使用旧 API 参数创建隐藏产品壳。API/options 只能作为只读排查；非严格兼容性兜底必须单独标记，不能计入 UI-only 主结论。
 - 同一产品下生成多个 release 时，版本描述使用短配置摘要，便于平台列表直接区分；不得留空、不得写长段说明。若页面确实没有输入入口，记录 `version_description_ui_not_exposed`。
 - V1.0 老版本若配置可到完成页但生成后 release 列表为空，标记 `legacy_v1_generate_no_release`，不能按成功或未测处理；需要附 result、截图、产品 id 和 release 列表为空证据。
@@ -551,6 +553,7 @@ validation_rules:
 
 # 3021 垂类最小覆盖验证
 
+- 3021 全垂类 UI-only 打包、固件包真机验证、SDK 编译产物验证、语音注册连续学习收敛经验见 `references/3021_ui_only_runtime_validation_lessons.md`。遇到同类任务时先读取该文档，再设计包矩阵和运行态验证。
 - 平台垂类验证不要堆全量词表。默认使用“默认唤醒 + 2 个代表业务命令 + 1 个音量命令 + 多唤醒切换/恢复 + 语音注册（仅支持垂类）”做最小高价值覆盖；静态校验再确认所选词、同义词、协议和能力开关已落入 `web_config.json`。
 - 当前已沉淀的 3021 垂类覆盖口径：
   - 风扇：`打开风扇`、`关闭风扇`、`最大音量`、`风扇管家` 多唤醒；语音注册不支持则跳过。
@@ -559,7 +562,7 @@ validation_rules:
   - 茶吧机/窗帘沿用对应垂类代表业务命令、音量、多唤醒、语音注册能力门控。
 - 对极短或强同音命令（如取暖桌 `开机`/`关机`）如果 TTS 容易串扰，可以使用 `web_config.json` 中同一 intent 的配置同义词作为播报文本，但报告必须写明“播报同义词 -> 校验规范 intent”，不能伪造 UI 不支持的词。
 - 连续学习类垂类删除命令词必须按双确认链路验证：`小聆小聆 -> 删除命令词 -> 删除命令词`，并等待算法重建完成；只播一次删除词没有形成 `reg del`/`del voice` 证据时，优先按用例时序问题收敛。
-- SDK 验证先静态解压 `mars-sdk.zip` 并比对 `build/bin/app.bin` 与固件包 `fw.bin` 的 hash；hash 一致时固件运行态证据可作为等价参考，但仍建议至少抽样烧录 SDK `app.bin`。若平台成功打包但 `pkgSDKUrl` 为空或 artifact 无 `MarsSDK_product`，归为平台 SDK 产物缺失，不得写成设备验证失败。
+- SDK 验证不能只看 zip 可下载或本地可编译。每个垂类至少抽 1 个 SDK 完成 `readme -> build.sh -r all -> build/bin/app.bin -> 烧录 -> 启动/协议/声卡运行态验证` 闭环；若平台成功打包但 `pkgSDKUrl` 为空或 artifact 无 `MarsSDK_product`，归为平台 SDK 产物缺失，不得写成设备验证失败。
 
 ---
 
@@ -579,6 +582,8 @@ validation_rules:
 
 ## 语音注册
 - 只有打开 `voiceRegEnable` 后才生成并执行语音注册专项；未打开时一律跳过语音注册相关用例
+- 语音注册验证前优先执行 `clear.configall` 并重新上电，清理历史 `wkword/regSave/reg_cmd_count`；不清历史配置会导致模板已满、删除状态残留或学习词已存在等假失败。
+- 语音注册控制词不得在算法导入模板里作为普通协议命令重复出现；`学习命令词/删除命令词/学习唤醒词/删除唤醒词/删除全部命令词/退出学习/退出删除` 等入口必须只来自 UI 语音注册配置生成的 `special_type=语音注册控制相关` 词条。若 `web_config.json` 同时存在普通协议命令和 special 控制词，运行时会优先命中普通协议命令并只发送 `snd_protocol`，不会进入 `Reg info/cmdlist get/wIvwRegist` 学习态，应直接归为配置构造问题。
 - 进入 `学习命令词`、`学习唤醒词`、`删除命令词`、`删除唤醒词` 等交互态后，必须等待当前提示播报结束（以 `play stop` 为准）且算法状态恢复，再允许下一句交互
 - 语音注册专项只能使用平台当前支持的触发词、控制词和功能词；`references/语音注册.log` 只可用于理解状态机和日志，不可直接拿其中历史调试命令词做测试输入
 - 除字数上下限外，其余平台语音注册配置都要覆盖正例和反例；学习语料必须本地自定义合成，不能直接使用命令词、唤醒词或提示词内容
@@ -587,6 +592,8 @@ validation_rules:
   - 若 `学习命令词` 后已直接出现 `cmdlist get[...]` / `Reg info` / `reg status:1`，说明已直入学习态，不得再强行补说目标命令
   - 若未直入学习态，再按当前阶段配置补说目标命令
 - `contLearn` 命令词学习若出现 `reg over!` 或学习模板已满，先走两步 `删除命令词` 清当前模板，再重新进入 `学习命令词`；重新进入学习态后直接说注册语料，不再额外重复目标命令
+- `contLearn` 注册样本不得直接使用内置命令词本身；进入学习态后使用合法非内置别名样本，例如目标 `打开风扇` 使用 `我要吹风`，否则容易被算法判为已有命令/冲突样本并出现 `reg failed` 或 `reg length error`。
+- `wakeTimeout=1 + contLearn + retryCount=1` 属于左边界/超时观察组合，只验证超时、唤醒窗口和边界行为，不作为语音注册正向学习成功包；正向连续学习必须使用正常超时纠偏包闭环。
 - 负向用例的错误语料选择必须避免误触发真实语音注册功能：
   - 语音注册控制词/删除词只允许用于“保留词冲突”“删除链路”“重试耗尽”这类明确场景
   - 普通恢复/耗尽负例优先使用平台支持的普通功能词
@@ -767,7 +774,7 @@ examples:
   - 深度调优：`algo_<lang>_depth_tuning.xlsx`
   - 全功能耦合冒烟：`algo_<lang>_full_feature_stateful.xlsx`，若编译容量异常必须拆回专项模板定位
 - 每个模板都要满足最低基础能力：默认唤醒、至少两个业务命令、音量上/下/最大/最小/中等、退出识别、负性词、欢迎语、被动播报、休息语、心跳协议、发送协议和接收协议。
-- 语音注册模板只提供学习/删除/退出控制词和宿主动作；字数上下限、重复次数、重试次数、模板上限等边界语料在运行时按配置合成，不允许把语音注册控制词当普通负例词使用。
+- 语音注册模板只提供基础宿主动作和可学习目标动作；学习/删除/退出等控制词必须通过 UI 语音注册配置表生成 special 控制词，不能在 `词条预处理` 中再导入同名普通协议命令。字数上下限、重复次数、重试次数、模板上限等边界语料在运行时按配置合成，不允许把语音注册控制词当普通负例词使用。
 - 多唤醒模板只提供候选唤醒词和切换/查询/恢复触发数据；`isDefault`、`isFrozen`、`sndProtocol`、`recProtocol` 等字段必须通过当前 UI 多唤醒表格真实配置。
 - 更新或新增平台可配置参数后，必须同步 `scripts/ui/generate_algo_template_variants.py`、`assets/templates/template_manifest.json`、`assets/templates/template_requirement_matrix.md` 和 `references/platform_firmware_template_requirement_matrix.md`，并完成 xlsx/JSON/编码校验。
 
@@ -1043,7 +1050,7 @@ else:
 # 📧 测试报告邮件发送
 
 ## 重要提醒
-**每次使用 send-email skill 发送 mars-belt 测试报告时，必须同时参考 `EMAIL_TEMPLATE.md` 和 `FULL_CHAIN_VALIDATION_RULES.md`！**
+**每次使用 send-email skill 发送 mars-belt 测试报告时，必须同时参考 `EMAIL_TEMPLATE.md`、`FULL_CHAIN_VALIDATION_RULES.md` 和 `references/platform_test_report_writing_standard.md`！**
 
 该文档包含：
 1. 邮件必须包含的四个核心区域（基本信息、配置参数、用例详情、附件说明）
@@ -1059,6 +1066,12 @@ python3 /tmp/send_xxx_report.py
 ```
 
 ## 注意事项
+- 平台打包/固件/SDK 验证报告必须使用固定结构：标题下先写“测试结论”，然后依次写“测试目的、测试方案、测试用例和结果、测试问题与分析、证据文件”
+- 测试结论必须简短量化，写清覆盖了多少垂类/产品/release/固件/SDK，当前是否有未闭环问题
+- 测试目的要说明本报告验证哪些需求功能是否正常，不能只写“完成测试”
+- 测试方案要说明每类功能怎么验证：UI 打包、基础配置、协议、声卡识别、多唤醒、语音注册、SDK 编译和 app.bin 真机
+- 测试用例和结果必须用表格呈现数量、执行结果和结论；逐包表必须包含 profile、releaseId、版本描述、关键配置向量和最终结论
+- 测试问题有问题才写；必须包含影响范围、现象、处理动作、最终分析。没有未闭环问题时写“未发现未闭环问题”即可
 - 邮件正文以“功能点结果”为主，只写 `PASS / FAIL / BLOCK`
 - `FAIL / BLOCK` 必须说明：哪个包、哪些实际参数值、出现了什么异常、与预期不符在哪里
 - 算法配置结果必须单独展示，不能只写基础配置
