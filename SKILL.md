@@ -78,6 +78,7 @@ system: |
 - UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为只读辅助探测或非 UI 健壮性附录。
 - UI-only 固件打包必须每次重新读取平台 UI 当前页面、下拉选项和联动结果；历史导出的产品/芯片/语言/SDK 矩阵只能作为参考，不能作为脚本内置死数据或后续打包输入源。详细流程见 `references/ui_firmware_packaging_workflow.md`。
 - 平台固件打包默认按“最小组合包”设计矩阵：首包默认配置验证主链路，后续包组合覆盖基础边界、协议、保存项、多唤醒模式、语音注册模式和模板数/重试次数；详细参考 `references/platform_firmware_minimal_packaging_strategy.md`。
+- 平台 UI 异常参数过滤验证必须使用真实浏览器 UI 输入和点击，专项策略见 `references/ui_invalid_input_validation_strategy.md`。主结论按 `PASS_REJECTED`、`PASS_SANITIZED`、`RISK_ACCEPTED`、`RISK_SILENT`、`UNSUPPORTED_REASONABLE`、`SCRIPT_LIMITATION` 分类；直接写接口或伪造 UI 不可填字段不能计入 UI 主结论。
 - 3021 已验证冒烟固件、台架控制逻辑和问题隔离流程见 `references/3021_known_good_smoke_firmware.md`；该 zip 资产位于 `assets/firmware/3021-smoke/`，必须随 git 发布。
 - 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
 - 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
@@ -154,6 +155,7 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
   - 禁止为了覆盖异常而直接修改 API payload，强行写入 UI 页面不可填写、不可选择、不可提交的字段或参数；这类内容只能单独列为非 UI 路径接口健壮性探测。
 - 专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.import_boundary_validation`。
 - V4.0.5 播报固件专项命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.v405_validation --publish-broadcast --keep-platform-records --no-persist-token`，覆盖音频合成导入、播报控制导入/新增、控制配置新增、播报音频上传异常、SDK 发布和可选 3021 烧录。
+- 合成管理异常参数验证必须优先走 UI：音频合成项目新增、播报合成产品新增、播报版本快速创建、播报控制新增/导入、自定义音频上传均要通过页面按钮、文件选择和保存动作触发；`webkitdirectory` 批量导入若自动化无法注入真实目录，必须标为 `SCRIPT_LIMITATION`，不能拿接口结果代替 UI 结论。
 - V4.0.5 完成审计必须补充逐需求报告，参考 `artifacts/platform-validation/20260528-v405-completion-audit/v405_completion_audit.md`；深定制要至少覆盖全词条打包、词条子集打包、深度调优保存/打包，并明确产物是否真的体现调优参数。
 - V4.0.5 当前已知风险：菜单/页面文案未完全改名；WAV bit depth 与 MP3 码率直连接口校验放行但缺少浏览器 UI 复核证据；深度调优阈值保存后未落入下载产物；3021 设备运行态需日志/协议/播报证据。
 - 音频合成导入表必须覆盖：空表、缺列、空字段、仅空格、序号非数字、重复音频名/序号、非法文件名字符、音频名长度、单条文本长度、导入行数、损坏 xlsx、csv 后缀。

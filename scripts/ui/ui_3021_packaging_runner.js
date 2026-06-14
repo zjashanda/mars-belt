@@ -9,7 +9,7 @@ const API = BASE + '/api/backend';
 dns.setServers((process.env.LISTENAI_DNS_SERVERS || '8.8.8.8,114.114.114.114').split(',').map(s => s.trim()).filter(Boolean));
 
 function parseArgs(argv) {
-  const args = { plan: '', outDir: '', limit: 0, offset: 0, headless: 'new', chrome: '/usr/bin/google-chrome', createMode: 'ui-strict', pollSeconds: 900, submitOnly: false };
+  const args = { plan: '', outDir: '', limit: 0, offset: 0, headless: 'new', chrome: '/usr/bin/google-chrome', createMode: 'ui-strict', pollSeconds: 900, submitOnly: false, stopAfterProduct: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], n = argv[i + 1];
     if (k === '--plan') args.plan = n, i++;
@@ -21,6 +21,7 @@ function parseArgs(argv) {
     else if (k === '--create-mode') args.createMode = n, i++;
     else if (k === '--poll-seconds') args.pollSeconds = Number(n), i++;
     else if (k === '--submit-only') args.submitOnly = true;
+    else if (k === '--stop-after-product') args.stopAfterProduct = true;
   }
   if (!args.plan) throw new Error('missing --plan');
   if (!args.outDir) args.outDir = path.join(path.dirname(args.plan), 'ui-run');
@@ -1374,6 +1375,11 @@ async function runJob(browser, token, job, args) {
     }
     result.product = product;
     await screenshot(page, jobDir, '00-after-product-create.png');
+    if (args.stopAfterProduct) {
+      result.status = 'product_created';
+      result.steps.push({ type: 'ui-stop-after-product', status: 'done' });
+      return result;
+    }
     await openProductDetail(page, job.productName);
     await screenshot(page, jobDir, '01-product-detail.png');
     await clickText(page, '快速创建', 'BUTTON');
@@ -1464,7 +1470,8 @@ async function main() {
     console.log(`[job] ${job.jobId} ${job.productName}`);
     const r = await runJob(browser, token, job, args);
     summary.results.push({ jobId: job.jobId, productName: job.productName, profile: job.profile, status: r.status, release: r.poll?.release || null, errors: r.errors });
-    summary.counts[r.status === 'success' ? 'success' : r.status === 'submitted' ? 'submitted' : 'failed']++;
+    const bucket = r.status === 'success' ? 'success' : r.status === 'submitted' ? 'submitted' : r.status === 'product_created' ? 'product_created' : 'failed';
+    summary.counts[bucket] = (summary.counts[bucket] || 0) + 1;
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
     console.log(`[job-result] ${job.jobId} ${r.status}`);
   }
