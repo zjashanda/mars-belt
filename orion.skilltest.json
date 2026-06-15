@@ -4,7 +4,7 @@
   "name": "Mars Belt Platform Validation",
   "summary": "MarsPlatform 固件打包、合成管理、平台接口、语音注册、多唤醒、设备烧录与运行态验证的模块化 SkillTest 资料。",
   "version": "1.0.0",
-  "updated_at": "2026-06-12",
+  "updated_at": "2026-06-15T16:30:00+08:00",
   "flow": [
     "选择 Agent 节点",
     "配置平台 token / UI 登录态 / 设备串口声卡",
@@ -268,6 +268,44 @@
             "缺少原失败证据"
           ],
           "estimated_minutes": 30
+        },
+        {
+          "id": "package_3021_english_current_ui_minrule",
+          "title": "3021 英文当前 UI 支持矩阵最小规则打包",
+          "objective": "确认英文版本先按 UI 实时扫描确定支持垂类，再对每个英文垂类选择一个代表品类按最小规则生成多 release；当前若只有通用垂类，则选择通用垂类下一个品类而不是误写成英文独立垂类。",
+          "preconditions": [
+            "有效 LISTENAI_TOKEN",
+            "浏览器 UI 可用",
+            "选择语言=英文、模组=CSK3021",
+            "英文算法模板与平台正式英文音频资产可用"
+          ],
+          "steps": [
+            "实时扫描 UI 当前英文 3021 垂类/版本/品类矩阵，不使用中文垂类列表外推。",
+            "每个扫描到的英文垂类选择一个代表品类；当前只有通用垂类时可选风扇等品类。",
+            "按能力裁剪最小矩阵；基础-only 执行默认基础、左边界基础、右边界+协议基础 3 包。",
+            "同一产品下通过 UI 生成多个 release，全部提交后统一轮询。",
+            "回读 release 实际配置；若高值 slider 等参数未入包，重打替代包并把旧包标记 superseded。"
+          ],
+          "expected_results": [
+            "支持范围报告明确区分垂类和品类。",
+            "有效 release 数满足能力矩阵最小包要求。",
+            "所有有效 release 后台 success 且配置回读符合预期。"
+          ],
+          "evidence": [
+            "UI options/catalog JSON",
+            "minrule plan JSON",
+            "preflight JSON",
+            "release poll summary",
+            "combined effective run summary"
+          ],
+          "pass_criteria": "英文支持范围来自 UI 实时扫描；有效 release 全部 success；报告不把代表品类误写成独立英文垂类。",
+          "fail_criteria": "使用历史 API 参数或中文垂类外推、每包新建产品、配置未入包仍计入覆盖、未说明英文垂类范围。",
+          "blocked_conditions": [
+            "token 无效",
+            "UI 英文矩阵为空且无法确认是否平台权限问题",
+            "平台构建队列异常"
+          ],
+          "estimated_minutes": 35
         }
       ]
     },
@@ -413,6 +451,44 @@
             "声卡不存在"
           ],
           "estimated_minutes": 12
+        },
+        {
+          "id": "english_firmware_official_audio_runtime",
+          "title": "英文固件正式合成音频运行态验证",
+          "objective": "烧录英文固件后，使用平台音频合成正式产物验证英文唤醒词和命令词识别；对 timeout<=1 左边界包采用 timeout-only 判定，避免把边界超时误判为命令词失败。",
+          "preconditions": [
+            "英文固件 zip 已生成并烧录",
+            "assets/audio/platform_synthesis/en/3021_fan_base 存在目标英文音频",
+            "3021 台架串口和声卡按 skill 默认口径连接"
+          ],
+          "steps": [
+            "按 switch2 门控上电并设置 loglevel 4。",
+            "协议口发送固件内业务协议帧确认 RX。",
+            "执行 scripts/py/listenai_3021_english_official_audio_verify.py。",
+            "播放 Hello My Dear、Start Fan、Stop Fan、Volume Up 等正式合成音频。",
+            "检查 Wakeup/intent/TX/RX 日志和 summary verdict。",
+            "英文左边界包 timeout<=1 时只要求唤醒与超时 marker，命令词正向由默认/右边界包覆盖。"
+          ],
+          "expected_results": [
+            "设备启动日志可见。",
+            "协议口 RX 可见。",
+            "英文唤醒和命令词均识别到配置 intent。"
+          ],
+          "evidence": [
+            "summary.json",
+            "serial_raw.log",
+            "playback.log",
+            "control.log",
+            "timeout-only summary.json"
+          ],
+          "pass_criteria": "bootSeen、protocolRxSeen、probeRc=0；正常包 missingWords 为空；timeout<=1 左边界包 timeoutSeen=true 且不要求命令词列表。",
+          "fail_criteria": "启动不可见、协议无 RX、声卡播放失败或英文词未识别。",
+          "blocked_conditions": [
+            "声卡不存在",
+            "日志/协议串口异常",
+            "设备供电或 boot 控制异常"
+          ],
+          "estimated_minutes": 15
         }
       ]
     },
@@ -996,6 +1072,40 @@
             "账号无删除权限"
           ],
           "estimated_minutes": 15
+        },
+        {
+          "id": "platform_audio_synthesis_assets_for_runtime",
+          "title": "中英文固件运行态音频合成测试资产",
+          "objective": "为中英文固件唤醒和命令词识别生成平台可见、可复用、可随 git 同步的正式音频合成测试资产。",
+          "preconditions": [
+            "合成管理/音频合成菜单可用",
+            "发音人字典存在与固件语言匹配的候选",
+            "本地 assets/audio/platform_synthesis/<lang>/<suite> 可写"
+          ],
+          "steps": [
+            "先检查 assets/audio/platform_synthesis/<lang>/<suite> 是否已有目标文本音频。",
+            "缺失时执行 scripts/py/listenai_platform_audio_synthesis_cache.py 创建音频合成项目和输出。",
+            "中文选择中文发音人并排除英文/英语标识；英文选择英语/英文标识发音人。",
+            "下载合成 zip 并只把 mp3/wav 与 manifest 放入 assets/audio/platform_synthesis/。",
+            "后续固件运行态验证复用该资产目录。"
+          ],
+          "expected_results": [
+            "平台音频合成项目和输出记录可见。",
+            "下载 zip 可解压且包含目标文本音频。",
+            "manifest 记录发音人、文本、文件、sha256。"
+          ],
+          "evidence": [
+            "音频合成项目名/ID",
+            "assets/audio/platform_synthesis/<lang>/<suite>/manifest.json",
+            "mp3/wav 测试资产"
+          ],
+          "pass_criteria": "资产文件完整且来自音频合成正式输出，不使用 generateAudio 试听接口作为主证据；音频资产随 git 同步。",
+          "fail_criteria": "无匹配语言发音人、合成输出失败、下载 zip 损坏、资产缺失或语言/发音人错配。",
+          "blocked_conditions": [
+            "平台合成队列超时",
+            "账号无合成管理权限"
+          ],
+          "estimated_minutes": 10
         }
       ]
     },

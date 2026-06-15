@@ -54,6 +54,8 @@ system: |
   25. 每个 release 必须填写简短版本描述，描述当前配置向量即可，例如 `默认+指定唤醒`、`左边界+循环唤醒`、`右边界+协议唤醒`、`默认+指定学习+指定唤醒`、`关闭隔离`。描述要短，不写产品名、长版本号或冗余说明；若 UI 当前不暴露版本描述输入，必须记录为 UI 限制，禁止用 API 补写后冒充 UI 结果。
   26. 3021 设备/烧录/协议/语音链路异常时，优先烧录已验证的基础冒烟固件 `assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip` 做对照。该固件和台架控制逻辑必须随 git 同步，不能作为 artifacts 临时文件删除；详细隔离思路、命令和期望标记见 `references/3021_known_good_smoke_firmware.md`。
   27. 平台打包/固件/SDK 真机验证报告必须按“标题下测试结论 -> 测试目的 -> 测试方案 -> 测试用例和结果 -> 测试问题与分析 -> 证据文件”结构输出；详细规则见 `references/platform_test_report_writing_standard.md`。报告必须量化覆盖范围和结果，不能只写“全部通过”。
+  28. 固件运行态语音识别音频优先使用平台「合成管理 -> 音频合成」正式构建产物：先查 `assets/audio/platform_synthesis/<lang>/<suite>/`，缺失时用 `scripts/py/listenai_platform_audio_synthesis_cache.py` 走正式音频合成项目/输出构建并下载；禁止把 `/fw/common/generateAudio` 试听接口产物作为识别主证据。中文合成必须选择中文发音人并排除英文/英语标识候选；英文合成必须选择英文/英语标识发音人。音频资产属于测试资料，必须随 skill git 同步。详细流程见 `references/platform_audio_synthesis_test_assets.md` 和 `references/english_platform_audio_synthesis_runtime_workflow.md`。
+  29. 3021 英文版本验证必须先实时扫描 UI 当前 `英文 + CSK3021` 支持矩阵，不能从中文垂类外推。若 UI 仅开放 `通用垂类`，则“每垂类一个代表品类”只需在通用垂类下选一个代表品类，例如 `风扇`；报告必须写清 `风扇` 是品类不是英文风扇垂类。基础英文能力按 3 包最小规则执行，`timeout<=1` 左边界包只验证唤醒+超时，不作为命令词正例；详细规则见 `references/3021_english_ui_minrule_validation_lessons.md`。
 
 ---
 
@@ -83,6 +85,8 @@ system: |
 - 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
 - 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
 - 平台打包、固件真机、SDK 编译和 app.bin 运行态验证报告必须先按证据生成详细 Markdown，再按 `references/platform_test_report_writing_standard.md` 生成结构化 HTML：结论放标题下，之后依次写测试目的、测试方案、测试用例和结果、测试问题与分析、证据文件。
+- 中英文固件运行态验证必须优先使用 `assets/audio/platform_synthesis/<lang>/<suite>/` 中的平台音频合成正式产物；若资产缺失，先调用 `scripts/py/listenai_platform_audio_synthesis_cache.py` 生成平台可见的「音频合成」项目和输出，再执行对应运行态验证脚本。试听接口只可作为预检，不能计入主结论。
+- 3021 英文版本专项口径见 `references/3021_english_ui_minrule_validation_lessons.md`：先实时扫描英文支持垂类，当前若只开放 `通用垂类` 则选一个代表品类执行基础 3 包；`风扇` 等名称必须标为品类，不能写成英文独立垂类。
 - 严格 UI-only 打包中，产品创建也必须通过 UI；平台为空或目标产品不存在时，按页面实时联动新建产品，不允许使用旧 API 参数创建隐藏产品壳。API/options 只能作为只读排查；非严格兼容性兜底必须单独标记，不能计入 UI-only 主结论。
 - 同一产品下生成多个 release 时，版本描述使用短配置摘要，便于平台列表直接区分；不得留空、不得写长段说明。若页面确实没有输入入口，记录 `version_description_ui_not_exposed`。
 - V1.0 老版本若配置可到完成页但生成后 release 列表为空，标记 `legacy_v1_generate_no_release`，不能按成功或未测处理；需要附 result、截图、产品 id 和 release 列表为空证据。
@@ -127,6 +131,8 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 若用户明确要求在账号页面查看新生成物，使用：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast --keep-platform-records`，并在回复中明确临时记录名称和 ID。
 - Token 仍按本 skill 规则从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取。
 - 结果统一写入 `artifacts/synthesis-validation/<YYYYMMDD-HHMMSS>/`，不得散落到其他目录。
+- 固件识别用音频必须走「音频合成」正式构建而不是试听接口：`PYTHONPATH=scripts/py python3 scripts/py/listenai_platform_audio_synthesis_cache.py --language en --suite 3021_fan_base --text 'Hello My Dear' ...` 或 `--language zh --suite 3021_fan_base --text '小聆小聆' ...`。该脚本先复用本地资产，缺失时创建平台可见项目并下载 zip；需要人工在平台查看时使用 `--force-synthesize` 重新生成并保留项目记录。
+- `assets/audio/platform_synthesis/<lang>/<suite>/` 属于小体积可复用测试资产，需要随 git 同步；`artifacts/` 下的音频合成 zip、截图、运行日志和 token 不同步。
 
 ## 必测链路
 1. 菜单和字典巡检：确认 `合成管理/音频合成/播报合成`、发音人、压缩比存在。
@@ -556,6 +562,7 @@ validation_rules:
 # 3021 垂类最小覆盖验证
 
 - 3021 全垂类 UI-only 打包、固件包真机验证、SDK 编译产物验证、语音注册连续学习收敛经验见 `references/3021_ui_only_runtime_validation_lessons.md`。遇到同类任务时先读取该文档，再设计包矩阵和运行态验证。
+- 3021 英文版本按中文思路重测时，同时读取 `references/3021_english_ui_minrule_validation_lessons.md` 和 `references/english_platform_audio_synthesis_runtime_workflow.md`；英文支持范围以 UI 实时扫描为准，英文音频必须来自平台音频合成正式产物。
 - 平台垂类验证不要堆全量词表。默认使用“默认唤醒 + 2 个代表业务命令 + 1 个音量命令 + 多唤醒切换/恢复 + 语音注册（仅支持垂类）”做最小高价值覆盖；静态校验再确认所选词、同义词、协议和能力开关已落入 `web_config.json`。
 - 当前已沉淀的 3021 垂类覆盖口径：
   - 风扇：`打开风扇`、`关闭风扇`、`最大音量`、`风扇管家` 多唤醒；语音注册不支持则跳过。

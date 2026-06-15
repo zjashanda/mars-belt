@@ -1,0 +1,51 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "英文",
+  "languageCode": "en",
+  "suite": "3021_fan_base",
+  "speaker": {
+    "label": "Luna_x4云（英语）",
+    "value": "x4_EnUs_Luna_assist"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": null,
+  "items": [
+    {
+      "text": "Hello My Dear",
+      "file": "hello_my_dear.mp3",
+      "bytes": 8424,
+      "sha256": "c3092d5fd178d4fdc71296be5a62d62907d1f300be826bf40cf3f77f9f4a01b2"
+    },
+    {
+      "text": "Start Fan",
+      "file": "start_fan.mp3",
+      "bytes": 7992,
+      "sha256": "ade708e7a2e8a56a5b59fa609309def880771e0215309a80a701eb687e0045af"
+    },
+    {
+      "text": "Stop Fan",
+      "file": "stop_fan.mp3",
+      "bytes": 7992,
+      "sha256": "3e9a25e5ae8406cad98dea48077b8d42e79a2490a10d02804bc5d4ac41516048"
+    },
+    {
+      "text": "Volume Up",
+      "file": "volume_up.mp3",
+      "bytes": 7344,
+      "sha256": "ece36ca45d42c1aabaa37fdc1fc72422dfe109be9ddb4e9ae29684d89fe403d2"
+    },
+    {
+      "text": "Set Volume To Max",
+      "file": "set_volume_to_max.mp3",
+      "bytes": 11448,
+      "sha256": "00d08169cb30e1a1302716c895824f2e20d82cca3b6e2eb842ec00edd51ffdef"
+    },
+    {
+      "text": "Exit Recognition",
+      "file": "exit_recognition.mp3",
+      "bytes": 9936,
+      "sha256": "6a8b2453c30bcd25cb468d98946330eddcd63255b00fad6c86538d4059dad4df"
+    }
+  ]
+}

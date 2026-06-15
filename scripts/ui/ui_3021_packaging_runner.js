@@ -622,11 +622,21 @@ async function setSlider(page, selector, value) {
     const v = Math.max(min, Math.min(max, Number(value)));
     const rect = slider.getBoundingClientRect();
     const pct = max === min ? 0 : (v - min) / (max - min);
-    const x = rect.left + rect.width * pct;
+    const x = Math.max(rect.left + 2, Math.min(rect.right - 2, rect.left + rect.width * pct));
     const y = rect.top + rect.height / 2;
-    return { x, y };
+    const hr = handle?.getBoundingClientRect();
+    return {
+      x,
+      y,
+      handleX: hr ? hr.left + hr.width / 2 : x,
+      handleY: hr ? hr.top + hr.height / 2 : y,
+    };
   }, { selector, value });
   if (!ok) return false;
+  await page.mouse.move(ok.handleX, ok.handleY);
+  await page.mouse.down();
+  await page.mouse.move(ok.x, ok.y, { steps: 8 });
+  await page.mouse.up();
   await page.mouse.click(ok.x, ok.y);
   await sleep(400);
   return true;

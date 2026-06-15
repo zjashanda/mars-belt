@@ -19,6 +19,12 @@ PREFERRED_PRODUCTS = {
     "通用垂类": ["智能垃圾桶", "通用", "风扇", "取暖器"],
 }
 
+PREFERRED_PRODUCTS_BY_LANGUAGE = {
+    # 英文通用垂类当前只有一个 defId，运行态验证优先选择语义清晰且已有
+    # 平台正式合成音频资产的风扇品类。
+    ("英文", "通用垂类"): ["风扇", "通用", "智能垃圾桶", "取暖器"],
+}
+
 STUDY_WORDS = {
     "茶吧机垂类": ["打开茶吧机", "关闭茶吧机", "烧水", "保温"],
     "窗帘垂类": ["打开窗帘", "关闭窗帘", "停止窗帘", "查询状态"],
@@ -26,6 +32,15 @@ STUDY_WORDS = {
     "取暖器垂类": ["打开取暖器", "关闭取暖器", "升高温度", "降低温度"],
     "取暖桌垂类": ["打开取暖桌", "关闭取暖桌", "升高温度", "降低温度", "查询状态"],
     "通用垂类": ["打开垃圾桶", "关闭垃圾桶", "查询状态", "开始清洁"],
+}
+
+STUDY_WORDS_EN = {
+    "茶吧机垂类": ["Start Tea Bar", "Stop Tea Bar", "Boil Water", "Keep Warm"],
+    "窗帘垂类": ["Open Curtain", "Close Curtain", "Stop Curtain", "Check Status"],
+    "风扇垂类": ["Start Fan", "Stop Fan", "Speed Up", "Speed Down"],
+    "取暖器垂类": ["Start Heater", "Stop Heater", "Temperature Up", "Temperature Down"],
+    "取暖桌垂类": ["Start Heating Table", "Stop Heating Table", "Temperature Up", "Temperature Down"],
+    "通用垂类": ["Start Fan", "Stop Fan", "Volume Up", "Set Volume To Max"],
 }
 
 
@@ -45,7 +60,8 @@ def safe_id(text: str) -> str:
 def product_name(row: Dict[str, str], stamp: str) -> str:
     vertical = vertical_name(row)
     label = row.get("productLabel") or row.get("productValue") or "产品"
-    return f"3021{vertical}{label}{short_def(row['defId'])}{stamp}打包测试"
+    lang = "英文" if row.get("language") == "英文" else "中文"
+    return f"3021{lang}{vertical}{label}{short_def(row['defId'])}{stamp}打包测试"
 
 
 def version_description(profile: str) -> str:
@@ -110,8 +126,11 @@ def coverage(vertical: str, profile: str, template_profile: str, feature: Dict[s
     return points
 
 
-def algo_config(vertical: str, profile: str, feature: Dict[str, str]) -> Dict[str, Any]:
-    words = STUDY_WORDS.get(vertical, ["打开风扇", "关闭风扇", "查询状态"])
+def algo_config(vertical: str, profile: str, feature: Dict[str, str], language: str) -> Dict[str, Any]:
+    if language == "英文":
+        words = STUDY_WORDS_EN.get(vertical, ["Start Fan", "Stop Fan", "Volume Up"])
+    else:
+        words = STUDY_WORDS.get(vertical, ["打开风扇", "关闭风扇", "查询状态"])
     cfg: Dict[str, Any] = {
         "voiceRegEnable": False,
         "multiWkeEnable": False,
@@ -180,14 +199,14 @@ def make_job(row: Dict[str, str], profile: str, template_profile: str, basic_kin
         "skipBasicConfig": basic_kind == "default",
         "basicConfig": base_basic(basic_kind),
         "skipAlgoImport": False,
-        "algoConfig": algo_config(vertical, profile, feature),
+        "algoConfig": algo_config(vertical, profile, feature, row["language"]),
         "feature": feature,
         "status": "pending",
     }
 
 
-def choose_representative(rows: Sequence[Dict[str, str]], vertical: str) -> Dict[str, str]:
-    preferred = PREFERRED_PRODUCTS.get(vertical, [])
+def choose_representative(rows: Sequence[Dict[str, str]], vertical: str, language: str) -> Dict[str, str]:
+    preferred = PREFERRED_PRODUCTS_BY_LANGUAGE.get((language, vertical), PREFERRED_PRODUCTS.get(vertical, []))
     for label in preferred:
         for row in rows:
             if row.get("productLabel") == label:
@@ -201,12 +220,13 @@ def main() -> int:
     parser.add_argument("--features-json", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--stamp", default=datetime.now().strftime("%m%d%H%M"))
+    parser.add_argument("--language", default="中文", choices=["中文", "英文"])
     parser.add_argument("--include-legacy-v1", action="store_true")
     args = parser.parse_args()
 
     rows = list(csv.DictReader(open(args.matrix_csv, encoding="utf-8-sig")))
     features = json.loads(Path(args.features_json).read_text(encoding="utf-8"))
-    rows = [r for r in rows if (r.get("moduleMark") == "CSK3021" or r.get("moduleBoard") == "CSK3021-CHIP") and r.get("language") == "中文"]
+    rows = [r for r in rows if (r.get("moduleMark") == "CSK3021" or r.get("moduleBoard") == "CSK3021-CHIP") and r.get("language") == args.language]
     if not args.include_legacy_v1:
         rows = [r for r in rows if not (r.get("versionLabel") or "").startswith("CSK3021-") and "V1.0" not in (r.get("versionLabel") or "")]
     by_vertical: Dict[str, List[Dict[str, str]]] = defaultdict(list)
@@ -218,7 +238,7 @@ def main() -> int:
     for vertical in sorted(by_vertical):
         if vertical == "UNKNOWN":
             continue
-        rep = choose_representative(by_vertical[vertical], vertical)
+        rep = choose_representative(by_vertical[vertical], vertical, args.language)
         feature = dict((features.get(rep["defId"]) or {}).get("feature") or {})
         selected.append({"vertical": vertical, "productLabel": rep["productLabel"], "productPath": rep["productPath"], "defId": rep["defId"], "versionLabel": rep["versionLabel"], "feature": feature})
         has_voice = feature.get("voice_regist") == "Optional"
@@ -246,7 +266,7 @@ def main() -> int:
 
     payload = {
         "generatedAt": datetime.now().isoformat(timespec="seconds"),
-        "scope": "3021 current UI Chinese non-legacy vertical representatives",
+        "scope": f"3021 current UI {args.language} non-legacy vertical representatives",
         "strategy": "One representative product per current 3021 vertical. Multiple releases under the same product. Each release covers a vector of basic, protocol, multi-wakeup, and voice-registration settings; no single-parameter package spam.",
         "selectedRepresentatives": selected,
         "counts": {"verticals": len(selected), "jobs": len(jobs), "voiceJobs": sum(1 for j in jobs if j["algoConfig"].get("voiceRegEnable")), "multiJobs": sum(1 for j in jobs if j["algoConfig"].get("multiWkeEnable"))},
