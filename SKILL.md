@@ -81,7 +81,7 @@ system: |
 - UI-only 相关能力必须明确主结论只能来自浏览器/人工 UI 触发；直连接口只能作为只读辅助探测或非 UI 健壮性附录。
 - UI-only 固件打包必须每次重新读取平台 UI 当前页面、下拉选项和联动结果；历史导出的产品/芯片/语言/SDK 矩阵只能作为参考，不能作为脚本内置死数据或后续打包输入源。详细流程见 `references/ui_firmware_packaging_workflow.md`。
 - 平台固件打包默认按“最小组合包”设计矩阵：首包默认配置验证主链路，后续包组合覆盖基础边界、协议、保存项、多唤醒模式、语音注册模式和模板数/重试次数；详细参考 `references/platform_firmware_minimal_packaging_strategy.md`。
-- 平台 UI 异常参数过滤验证必须使用真实浏览器 UI 输入和点击，专项策略见 `references/ui_invalid_input_validation_strategy.md`。主结论按 `PASS_REJECTED`、`PASS_SANITIZED`、`RISK_ACCEPTED`、`RISK_SILENT`、`UNSUPPORTED_REASONABLE`、`SCRIPT_LIMITATION` 分类；直接写接口或伪造 UI 不可填字段不能计入 UI 主结论。
+- 平台 UI 异常参数过滤验证必须使用真实浏览器 UI 输入和点击，专项策略见 `references/ui_invalid_input_validation_strategy.md`。主结论按 `PASS_REJECTED`、`PASS_SANITIZED`、`ISSUE_ACCEPTED`、`ISSUE_SILENT`、`UNSUPPORTED_REASONABLE`、`SCRIPT_LIMITATION` 分类；直接写接口或伪造 UI 不可填字段不能计入 UI 主结论。
 - 3021 已验证冒烟固件、台架控制逻辑和问题隔离流程见 `references/3021_known_good_smoke_firmware.md`；该 zip 资产位于 `assets/firmware/3021-smoke/`，必须随 git 发布。
 - 固件打包算法模板必须按“参数能力/测试类型”选择，不能只按中文/英文或基础/多唤醒/语音注册粗分。模板覆盖矩阵见 `references/platform_firmware_template_requirement_matrix.md`，生成资产见 `assets/templates/template_manifest.json`。
 - 3021 UI-only 全量打包必须按“同产品多固件版本 + 配置向量包”执行：`base_*`、`multi_*`、`voice_*` 是同一产品下的多个 release profile，不是每个配置新建产品，也不是一参一包。最终报告必须展开 `coveragePoints` 证明单包覆盖基础参数、串口/日志、掉电保存、播报、算法模板和专项能力。
@@ -143,13 +143,22 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 
 ## 播报批量导入
 - 播报合成版本配置里的“批量导入”必须以真实 UI 为准：前端选择文件夹后会读取 `.xlsx`，只保留 `.mp3/.wav/.xlsx`，前端表格校验通过后才调用 `/biz/audiofile/batchImportItems`。`/biz/audiofile/batchImport` 只作为旧接口/后端健壮性探测，不能直接写成 UI 路径结论。
-- 必须用 `.mp3 + .xlsx` 组合验证：mp3 要满足 `<=20KB`、`16K` 单通道、`16bit`、码率 `<=32kbps`；xlsx 必须包含 `播报内容`、`音频描述`、`接收协议`。
+- 必须用 `.mp3 + .xlsx` 组合验证；音频规格以当前 UI 弹窗为准。2026-06-17 页面文案为：MP3、大小不大于 `500KB`、采样率不大于 `48K`、`16bit`、单通道、码率不大于 `32kbps`；xlsx 必须包含 `播报内容`、`音频描述`、`接收协议`。历史 `<=20KB/16K` 只能作为旧版本参考，不能覆盖实时 UI。
 - `音频描述` 必须与 mp3 文件名去扩展名一致；导入成功后返回的 `reply/comments/recProtocol` 要继续用于创建播报版本并发布 SDK，不能只停留在接口返回。
 - 异常矩阵必须覆盖：文件过大、采样率 `32000/48000/64000`、多通道、码率超限、损坏/空文件、音频后缀 `.wav/.txt/.aac`、xlsx 文件名不匹配、缺列、空字段、非法协议、缺少 xlsx、缺少音频。
 - 异常矩阵命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.batch_import_negative`。
 - 严格 UI 结论必须由浏览器 UI 或人工 UI 操作触发；直接调 `/biz/audiofile/validate`、`/biz/audiofile/batchImport`、`/biz/audiofile/batchImportItems` 只能标为“UI 等价 API”或“后端健壮性探测”。特别是 `.wav`、MP3 码率、WAV bit depth 等上传限制，若没有浏览器证据，不得写成前端 UI 缺陷。
 - 当前已知 API 探测风险：后端接口曾放行 `.wav`/伪后缀/mp3 文件名不匹配/缺列空值/非法协议/缺少音频，且这些异常行还能继续创建播报版本；报告时必须明确标为后端校验缺失或待 UI 复核，不能混入 UI 主结论。
 - 若要把播报 SDK 下发到 3021 设备复核，先静态检查 SDK 内 `cfg.json/ring_cfg.json/fw.bin`，再按固定 `scripts/burn/app.bin` 流程烧录；当前默认日志/烧录口使用 `/dev/ttyACM0`，协议口使用 `/dev/ttyACM2`，运行态上电使用 `uut-switch2` 协议门控。烧录后必须看到日志串口、协议口或实际播报证据，不能只凭 SDK zip 可下载或烧录工具成功判定设备侧通过。若 `fw.bin/fw.img` 烧录成功但设备无日志/无协议响应，记录为当前 SDK 产物或烧录路径不适配，并恢复已知可用固件。
+
+## UI-only 播报合成专项
+- 严格 UI-only 播报合成使用 `scripts/ui/ui_broadcast_synthesis_fullchain.js`，覆盖新建产品、手填/协议/主动播报、批量导入、异常目录、SDK/固件发布下载和可选 3021 烧录证据。详细流程见 `references/ui_only_broadcast_synthesis_validation.md`。
+- 批量导入是 `webkitdirectory` 目录上传，自动化必须向 file input 传目录路径；传展开后的单文件列表会导致前端无法预览，不能据此判定平台失败。
+- 异常音频专项必须使用中文文件名和中文 `音频描述`，避免被文本校验遮挡；若要验证音频规格，就不能让英文/下划线文件名先触发“回复文本仅支持中文”错误。
+- 发布下载闭环必须 UI 点击 `构建`，只读轮询到 `success`，再 UI 点击 `下载 -> SDK/固件` 并校验 zip；`status=init` 或只有草稿保存不能算通过。
+- 3021 设备复核至少要保存烧录日志、启动配置日志、协议 RX 和 `mini-player play id`；若报告要求 `PA_MGR`，必须打开功放配置生成专项包后复测，日志中需要出现 `PA_MGR` 的 ON/OFF 刷新链路。未打开功放配置的包可能只输出 RX 和 `mini-player`，不能拿来否定平台播报链路。
+- 异常项判定必须先排除“钳制回合法值”：例如默认音量 `999` 被保存为合法 `defaultVol/volLevel` 时是有效防护，不计平台问题。只有异常输入仍被 UI 导入或保存、且没有回归合法值时，才标为 `ISSUE_UI_ACCEPTED_INVALID`。
+- 给研发的问题报告必须逐项写清“填了什么/上传了什么、为什么应拦截、实际怎么被通过、是否钳制回合法值、影响、证据路径”。本轮 11 项回归清单和报告表结构见 `references/ui_only_broadcast_synthesis_validation.md` 的“研发定位报告口径”。
 
 ## 合成导入与边界异常
 - 用户要求验证“音频合成/播报合成从文件导入表、异常兜底、合成上限、条数上限、单条字符上限”时，必须补跑专项边界脚本，不得只跑正常全链路。
@@ -168,7 +177,7 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 音频合成导入表必须覆盖：空表、缺列、空字段、仅空格、序号非数字、重复音频名/序号、非法文件名字符、音频名长度、单条文本长度、导入行数、损坏 xlsx、csv 后缀。
 - 播报合成导入表必须覆盖：合法 1/10 行、50/100/200/500 行、播报内容长度、音频描述长度、仅空格、重复音频描述、重复接收协议；音频文件格式异常仍由 `batch_import_negative.py` 覆盖。
 - 试听合成边界必须覆盖：空文本、长文本、语速/音量 `1/100` 边界与 `0/101/负数/999` 越界、非法发音人。
-- 判定时不能只看接口是否失败：预期拒绝却 `code=200` 是风险；失败但只返回“服务器异常/空信息”也要标为错误信息不合格。
+- 判定时不能只看接口是否失败：预期拒绝却 `code=200` 且异常值未回归合法状态，是明确问题；失败但只返回“服务器异常/空信息”也要标为错误信息不合格。
 - 对导入阶段被错误放行的异常行，还必须执行下游闭环复核：`PYTHONPATH=scripts/py python3 -m synthesis_management.import_downstream_validation --source-report <synthesis_import_boundary_result.json>`，确认这些异常行是否还能继续创建音频合成产物或播报版本。
 
 ## 安全约束

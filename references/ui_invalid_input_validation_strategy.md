@@ -19,8 +19,8 @@
 |---|---|
 | `PASS_REJECTED` | UI 给出明确错误提示并阻止继续。 |
 | `PASS_SANITIZED` | UI 将异常值重置、裁剪或清洗为合法值，并未让异常值进入后续配置。 |
-| `RISK_ACCEPTED` | UI 保留异常值并保存/继续成功，需作为前端过滤不足风险。 |
-| `RISK_SILENT` | UI 没有明确错误提示，用户无法判断失败原因。 |
+| `ISSUE_ACCEPTED` | UI 保留异常值并保存/继续成功，需作为前端过滤不足问题。 |
+| `ISSUE_SILENT` | UI 没有明确错误提示，用户无法判断失败原因。 |
 | `UNSUPPORTED_REASONABLE` | 不支持能力在页面不可见、不可开启或被合理门控。 |
 | `SCRIPT_LIMITATION` | 当前自动化无法通过真实 UI 完成该动作，需要人工 UI 补测，不能写为功能通过。 |
 

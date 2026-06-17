@@ -5,6 +5,7 @@ __pycache__/
 TOOLS.md
 plan.md
 error.md
+SKILLbak.md
 deviceInfo_generated.json
 artifacts/
 $SUITE_DIR/
@@ -18,4 +19,11 @@ scripts/py/__pycache__/
 scripts/result/
 scripts/_runtime/
 scripts/package/
+scripts/artifacts/
 scripts/burn/burn_log/
+scripts/ui/node_modules/
+
+references/Profile*/
+references/**/Cache/
+references/**/Code Cache/
+references/**/GPUCache/

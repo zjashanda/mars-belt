@@ -1184,9 +1184,9 @@
       "id": "synthesis_import_upload_boundary_ui",
       "module": "synthesis_management_ui",
       "name": "合成管理 UI 上传/导入异常与边界",
-      "summary": "通过真实浏览器 UI 或人工 UI 路径验证音频上传、播报批量导入和表格导入异常兜底。",
+      "summary": "通过真实浏览器 UI 验证音频上传、播报批量导入、表格导入异常兜底、SDK/固件发布下载和可选 3021 播报运行态；异常项必须区分已钳制回合法值与真正被 UI 放行的问题。",
       "requirement": "异常音频、异常 xlsx、上限边界必须走 UI 文件选择/目录选择触发，不能把直连接口探测混入 UI 主结论。",
-      "logic": "使用浏览器选择文件或目录，观察前端过滤、预览、错误提示、保存按钮和网络事件；结果按 browser_ui、frontend_model、ui_equivalent_api、api_probe 分级。",
+      "logic": "优先执行 scripts/ui/ui_broadcast_synthesis_fullchain.js；所有写动作由浏览器 UI 触发，API 仅用于登录态/只读轮询。结果按 PASS_UI_ACCEPTED_VALID、PASS_UI_REJECTED、PASS_UI_SANITIZED、ISSUE_UI_ACCEPTED_INVALID 分级；ISSUE 必须证明异常值没有像音量越界一样被钳制回合法值。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -1194,7 +1194,7 @@
       ],
       "recommended_mode": "dry-run",
       "runner": "agent_shell",
-      "task": "scripts/py/synthesis_management/import_boundary_validation.py; scripts/py/synthesis_management/batch_import_negative.py; artifacts/manual-validation/20260531-ui-audio-import-recheck/README.md",
+      "task": "scripts/ui/ui_broadcast_synthesis_fullchain.js; scripts/py/synthesis_management/import_boundary_validation.py; scripts/py/synthesis_management/batch_import_negative.py",
       "requires": [
         "有效 UI 登录态或 token",
         "浏览器环境",
@@ -1251,9 +1251,10 @@
           ],
           "steps": [
             "进入播报控制批量导入。",
-            "选择合法目录做对照。",
-            "选择缺列、空字段、不匹配、重复协议、只传 xlsx、>20KB、32/48K、双声道、64kbps、wav/aac 后缀等目录。",
-            "观察是否生成预览、错误提示和保存按钮。"
+            "选择合法目录做对照，目录必须由 webkitdirectory file input 触发。",
+            "选择缺列、空字段、不匹配、重复协议、只传 xlsx、>500KB、64K、双声道、64kbps、损坏 mp3、wav 后缀等目录。",
+            "使用中文文件名/音频描述复测音频规格异常，避免文本校验遮挡。",
+            "观察是否生成预览、错误提示、保存按钮和 broadcastrelease/add。"
           ],
           "expected_results": [
             "合法目录可导入。",
@@ -1264,10 +1265,11 @@
             "截图",
             "DOM 文本",
             "目录 fixtures",
-            "导入结果 JSON"
+            "UI 网络事件",
+            "播报版本保存 payload"
           ],
-          "pass_criteria": "异常目录均被拦截且提示明确。",
-          "fail_criteria": "异常目录被接受、保存按钮可用或弹窗直接关闭为成功。",
+          "pass_criteria": "异常目录均被拦截且提示明确；若 UI 钳制/清洗回合法值并能证明保存值合法，也按防护通过处理。",
+          "fail_criteria": "异常目录被 UI 接受、触发 batchImportItems 或继续保存到播报版本，且保存 payload 没有回归合法值；典型回归清单包括非法协议、脚本/emoji/超长文本、缺音频、重复协议、协议为空、超大 MP3、WAV、双声道、64K、64kbps、损坏 MP3。",
           "blocked_conditions": [
             "版本编辑页入口变化",
             "浏览器目录选择受限"
