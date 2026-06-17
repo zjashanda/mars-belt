@@ -4,7 +4,7 @@
   "name": "Mars Belt Platform Validation",
   "summary": "MarsPlatform 固件打包、合成管理、平台接口、语音注册、多唤醒、设备烧录与运行态验证的模块化 SkillTest 资料。",
   "version": "1.0.0",
-  "updated_at": "2026-06-15T16:30:00+08:00",
+  "updated_at": "2026-06-17",
   "flow": [
     "选择 Agent 节点",
     "配置平台 token / UI 登录态 / 设备串口声卡",
@@ -315,7 +315,7 @@
       "name": "设备烧录与运行态验证",
       "summary": "把平台产物或已验证 3021 冒烟固件烧录到本地设备，使用 switch2 协议口门控和 switch1 电源控制验证配置断言、启动日志、唤醒、命令词、协议和播报链路。",
       "requirement": "证明固件不仅能打包，还能在目标设备上稳定启动并按配置工作。",
-      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按 switch2.off + switch1/switch3 进入 boot 烧录；烧录后正常上电前先 switch2.off 断开协议口，上电稳定后 switch2.on 接回协议口。若设备链路异常，先烧录 assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip 做已知可用对照，再判断是新包、设备、线序还是控制链路问题。",
+      "logic": "先把 fw.bin 暂存为 scripts/burn/app.bin，再按 switch2.off + switch1/switch3 进入 boot 烧录；烧录后正常上电前先 switch2.off 断开协议口，上电稳定后 switch2.on 接回协议口。若设备链路异常，先烧录 assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip 做已知可用对照，再判断是新包、设备、线序还是控制链路问题。 3021 运行态验证前必须执行 web_config 静态门禁和 Running Config 前置状态检查；语音注册目标包启动后禁止后置 clear.configall；wakeTimeout<=1 左边界包使用 wake+timeout 专用用例集；wkword=255 需要结合协议多唤醒模式和 cur wk/not waked 日志判定；协议切换模式声学验证前先发送默认唤醒词协议切换帧。 遇到运行态异常必须按 references/3021_runtime_validation_closure_playbook.md 的顺序归因：静态门禁、Running Config 前置状态、配置专用用例、命令级专项、冒烟固件隔离；CONFIG_FAIL 不写成固件或平台缺陷。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -489,7 +489,78 @@
             "设备供电或 boot 控制异常"
           ],
           "estimated_minutes": 15
+        },
+        {
+          "id": "runtime_state_precheck_static_gate",
+          "title": "运行态前置状态检查与静态 special 门禁",
+          "objective": "在烧录/播放前拦截会导致假失败的状态污染和 special 控制词遮蔽配置。",
+          "preconditions": [
+            "已下载固件包并包含 web_config.json",
+            "3021 台架可烧录/可读取日志"
+          ],
+          "steps": [
+            "解析 web_config.json，检查语音注册和多唤醒 special 控制词是否与普通协议词重名。",
+            "烧录目标包前可用当前固件预清状态；语音注册目标包启动后不执行 clear.configall。",
+            "启动后解析 Running Config，记录 wkword/regSave/reg_cmd_count。",
+            "对 wakeTimeout<=1 包仅执行唤醒+超时边界用例；命令级疑点另跑 command probe。"
+          ],
+          "expected_results": [
+            "重名 special 配置静态标记 CONFIG_FAIL。",
+            "非法 wkword 状态标记 ENV_STATE_DIRTY；协议多唤醒合法 wkword=255 不误拦。",
+            "左边界包不再因未跑长链路误报全功能失败。"
+          ],
+          "evidence": [
+            "static_special_shadow.json",
+            "summary.json",
+            "serial_raw.log",
+            "command_probe summary"
+          ],
+          "pass_criteria": "静态门禁、前置状态、边界用例和专项复测都有结构化字段输出。",
+          "fail_criteria": "后置清理破坏语音注册包、special 重名仍继续跑、左边界包按全功能正例误判。",
+          "blocked_conditions": [
+            "已知可用冒烟固件也无声学唤醒，说明声学链路阻塞"
+          ],
+          "estimated_minutes": 10
+        },
+        {
+          "id": "runtime_failure_attribution_closure",
+          "title": "3021 运行态异常归因闭环",
+          "objective": "把 wkword=255、语音注册失败、多唤醒异常、左边界误判和单命令缺失快速归因到具体类别，避免无效重跑。",
+          "preconditions": [
+            "已下载目标固件包并可解析 web_config.json",
+            "3021 台架串口、协议门控和声卡可用",
+            "已知可用冒烟固件存在"
+          ],
+          "steps": [
+            "先执行 web_config 静态门禁，拦截 special 控制词与普通协议词重名。",
+            "烧录前预清历史状态，目标包启动后读取 Running Config；语音注册包启动后禁止 clear.configall。",
+            "按配置选择用例集：左边界只跑 wake+timeout，协议多唤醒先发送默认唤醒词协议切换帧，语音注册按指定/连续学习状态机执行。",
+            "若仅单个命令缺失，使用 --command-probe-word 重复 3 轮并记录 commandProbeCounts。",
+            "若基础链路整体异常，烧录已知可用 3021 冒烟固件隔离台架/声学问题。"
+          ],
+          "expected_results": [
+            "每个失败项都有 staticFindings、precheckConfig、commandProbeCounts 或冒烟对照证据。",
+            "CONFIG_FAIL、边界裁剪、专项 PASS 的偶发缺失不会被误写为平台缺陷。"
+          ],
+          "evidence": [
+            "summary.json",
+            "final_closure_summary.md",
+            "serial runtime log",
+            "command probe result",
+            "known-good smoke result"
+          ],
+          "pass_criteria": "异常归因落到配置构造、测试用例、状态清理、声学/状态偶发、台架/设备链路、固件产物或平台缺陷之一，并给出证据字段。",
+          "fail_criteria": "只写失败现象、无限重跑、把 CONFIG_FAIL 当固件失败、或缺少专项/冒烟对照证据。",
+          "blocked_conditions": [
+            "设备未接线",
+            "声卡不存在",
+            "目标包无法下载"
+          ],
+          "estimated_minutes": 30
         }
+      ],
+      "references": [
+        "references/3021_runtime_state_and_special_control_validation.md"
       ]
     },
     {
@@ -498,7 +569,7 @@
       "name": "语音注册专项",
       "summary": "验证命令词/唤醒词学习、重试、重复次数、删除、容量、边界和不同学习模式。",
       "requirement": "只在产品支持语音注册时执行，证明学习成功后可用、删除后失效、失败后不污染默认能力。",
-      "logic": "根据 releaseRegist 配置生成专项包和 VOICE-* suite，等待提示播报结束后播放注册语料，按日志、播报、协议和回测结果判定。 打包模板按 specific/continuous/boundary_delete 选择，控制词只用于语音注册专项，不作为普通负例。",
+      "logic": "根据 releaseRegist 配置生成专项包和 VOICE-* suite，等待提示播报结束后播放注册语料，按日志、播报、协议和回测结果判定。 打包模板按 specific/continuous/boundary_delete 选择，控制词只用于语音注册专项，不作为普通负例。 语音注册包只能烧录前预清历史状态，目标包启动后禁止 clear.configall；控制词与普通协议词重名直接归为配置构造错误。 指定学习多目标时按学习命令词->目标命令->重复目标命令本身执行，并等待 Reg info/cmdlist/强成功 marker；连续学习才使用合法自然别名样本；成功必须有 wIvwRegistArbitrate success/save new voice.bin/reg over success 等强成功 marker，失败 marker 不得被 voice regging over 掩盖。",
       "modes": [
         "plan-only",
         "dry-run",
@@ -631,7 +702,7 @@
       "name": "多唤醒与唤醒词掉电保存",
       "summary": "验证多个唤醒词的新增、切换、查询、恢复默认和掉电保存行为。",
       "requirement": "只在产品支持多唤醒时执行，确认当前词/非当前词、生效和掉电保持逻辑正确。",
-      "logic": "打包含额外唤醒词的固件，烧录后按唤醒/切换/查询/恢复默认/断电重启路径验证当前唤醒词状态。 loop/specified/protocol 三种模式分别选择对应算法模板和 UI 多唤醒配置。",
+      "logic": "打包含额外唤醒词的固件，烧录后按唤醒/切换/查询/恢复默认/断电重启路径验证当前唤醒词状态。 loop/specified/protocol 三种模式分别选择对应算法模板和 UI 多唤醒配置。 specified/loop 模式必须静态检查切换唤醒词、恢复默认唤醒词、查询唤醒词不得被普通协议词遮蔽；protocol 模式下 wkword=255 需结合运行日志判定。 special 遮蔽命中时是配置构造问题，直接 CONFIG_FAIL，不继续烧录归因。",
       "modes": [
         "plan-only",
         "dry-run",

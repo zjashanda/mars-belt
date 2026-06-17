@@ -17,6 +17,11 @@ RESERVED_VOICE_REG_CONTROLS = {
     "退出学习",
     "退出删除",
 }
+RESERVED_MULTI_WAKE_CONTROLS = {
+    "切换唤醒词",
+    "恢复默认唤醒词",
+    "查询唤醒词",
+}
 
 
 def norm(text: Any) -> str:
@@ -151,6 +156,10 @@ def validate(plan: Dict[str, Any], root: Path, allow_v1: bool = False) -> Tuple[
             add("FAIL", "MULTI-WAKE-FEATURE-GATE", job_id, "multiWkeEnable=true but feature.multi_wakeup is not Optional", feature=feature)
         if cfg.get("multiWkeEnable") and cfg.get("multiWkeMode") not in {"specified", "loop", "protocol"}:
             add("FAIL", "MULTI-WAKE-MODE", job_id, "multiWkeEnable requires multiWkeMode specified/loop/protocol", algoConfig=cfg)
+        if cfg.get("multiWkeEnable") and cfg.get("multiWkeMode") in {"specified", "loop"}:
+            multi_hits = sorted(RESERVED_MULTI_WAKE_CONTROLS & set(cells))
+            if multi_hits:
+                add("FAIL", "MULTI-WAKE-TEMPLATE-RESERVED", job_id, "multi-wakeup special control words must not be imported as normal algorithm rows", template=template, hits=multi_hits)
 
     for vertical, names in sorted(product_names_by_vertical.items()):
         if len(names) != 1:

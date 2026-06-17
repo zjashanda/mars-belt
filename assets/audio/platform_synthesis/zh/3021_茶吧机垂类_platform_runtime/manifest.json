@@ -1,0 +1,57 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "中文",
+  "languageCode": "zh",
+  "suite": "3021_茶吧机垂类_platform_runtime",
+  "speaker": {
+    "label": "叶子（情感）",
+    "value": "x2_xiaoye"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": null,
+  "items": [
+    {
+      "text": "小聆小聆",
+      "file": "xiao_ling_xiao_ling.mp3",
+      "bytes": 7560,
+      "sha256": "8782f044357ce0cd4d6a56682fd79b438284cb9836a12b6d405456d4907f8f91"
+    },
+    {
+      "text": "打开茶吧机",
+      "file": "zh_acc75a1c4a.mp3",
+      "bytes": 8856,
+      "sha256": "4b4936df6bd368a0d126651dd414ab87c7738e2f38070bee8b36f131284a07c7"
+    },
+    {
+      "text": "关闭茶吧机",
+      "file": "zh_174959fc8d.mp3",
+      "bytes": 8856,
+      "sha256": "ba91b2188adfc842adee84a59e207597602b8529695f4e2df364b2390b021948"
+    },
+    {
+      "text": "最大音量",
+      "file": "zui_da_yin_liang.mp3",
+      "bytes": 7560,
+      "sha256": "42aa7768178ab6f6554be1ec1202c43cc1c612dc922e39b368e3f9526b6207ae"
+    },
+    {
+      "text": "切换唤醒词",
+      "file": "qie_huan_huan_xing_ci.mp3",
+      "bytes": 9720,
+      "sha256": "8f055374a63b29d6053065bb064b788b7f395e0095d3c58f98d79015a203866c"
+    },
+    {
+      "text": "小优小优",
+      "file": "xiao_you_xiao_you.mp3",
+      "bytes": 7776,
+      "sha256": "37839381cccc4ca2c00667c882a5083ad1ec2d7fdfca177f5c30c4585f889b5e"
+    },
+    {
+      "text": "恢复默认唤醒词",
+      "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+      "bytes": 12096,
+      "sha256": "699cbb3ca4acedad63537a0cf38b608133a859b5257e925e9ca26355b26340e2"
+    }
+  ]
+}

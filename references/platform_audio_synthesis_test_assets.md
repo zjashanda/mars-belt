@@ -35,6 +35,12 @@ assets/audio/platform_synthesis/
 4. 下载正式合成 zip 后，只把最终 mp3/wav 和 manifest 复制到 `assets/audio/platform_synthesis/`；zip 和解压中间目录留在 `artifacts/audio-synthesis-assets/`。
 5. `/fw/common/generateAudio` 试听接口只能用于播放链路预检，不能作为固件识别验证主证据。
 
+## 正式合成接口参数口径
+
+- 当前 UI 的「合成语音配置」提交 `/fw/voice/output/add` 时，`params` 字段是对象形态：`{"rows":[{"idx":1,"filename":"xiao_ling_xiao_ling","text":"小聆小聆"}]}`。
+- 不要再把 `params` 提交为 JSON 字符串；旧形态在当前平台会返回 `415 参数格式错误`。
+- 若平台 UI 更新，先下载当前前端 `output-form*.js` 或走浏览器 UI 观察实际提交，再更新脚本；不要沿用历史 API 参数假设。
+
 ## 发音人规则
 
 - 中文固件测试音频必须选择中文发音人。

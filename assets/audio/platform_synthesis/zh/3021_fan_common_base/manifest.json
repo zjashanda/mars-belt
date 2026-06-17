@@ -1,0 +1,101 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "中文",
+  "languageCode": "zh",
+  "suite": "3021_fan_common_base",
+  "speaker": {
+    "label": "叶子（情感）",
+    "value": "x2_xiaoye"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": {
+    "projectName": "ZH_AUDIO_SYNTH_3021_FAN_COMMON_BASE_20260616_102012",
+    "projectId": "2066707382982008834",
+    "outputId": "2066707387520245761",
+    "fileId": "2066707386584915970",
+    "zipPath": "artifacts/audio-synthesis-assets/20260616-102012/ZH_AUDIO_SYNTH_3021_FAN_COMMON_BASE_OUTPUT_20260616_102012.zip",
+    "items": [
+      {
+        "file": "da_kai_feng_shan.mp3",
+        "bytes": 7776,
+        "sha256": "84c4554d826a7e08bd621d5a09c8a2a42b974a28553c0cf5b48e2e36449d8bc0"
+      },
+      {
+        "file": "guan_bi_feng_shan.mp3",
+        "bytes": 7992,
+        "sha256": "14538f6bc2a21ae134709962642e9cc0302d93db985bc86d5f140dc378e11a92"
+      },
+      {
+        "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+        "bytes": 12096,
+        "sha256": "934e3b06768dd436b2d91e5bf1e3673a009fdb702da97587453a4d12de94eeca"
+      },
+      {
+        "file": "qie_huan_huan_xing_ci.mp3",
+        "bytes": 9720,
+        "sha256": "8f055374a63b29d6053065bb064b788b7f395e0095d3c58f98d79015a203866c"
+      },
+      {
+        "file": "xiao_ling_xiao_ling.mp3",
+        "bytes": 7560,
+        "sha256": "e8eb6a18d4f413be6683bcc95e88d502dad65e9e57717e3c1c0e8a412f56206c"
+      },
+      {
+        "file": "xiao_you_xiao_you.mp3",
+        "bytes": 7776,
+        "sha256": "4786b58eafdd56653766976a96abd1f3065f32f8b70309063c60992628cd1082"
+      },
+      {
+        "file": "zui_da_yin_liang.mp3",
+        "bytes": 7560,
+        "sha256": "29a67462f73d1925ccda1488617c914e21bfcba3808c37392bd57f68bd74b4bb"
+      }
+    ],
+    "platformRecordsKept": true
+  },
+  "items": [
+    {
+      "text": "小聆小聆",
+      "file": "xiao_ling_xiao_ling.mp3",
+      "bytes": 7560,
+      "sha256": "e8eb6a18d4f413be6683bcc95e88d502dad65e9e57717e3c1c0e8a412f56206c"
+    },
+    {
+      "text": "打开风扇",
+      "file": "da_kai_feng_shan.mp3",
+      "bytes": 7776,
+      "sha256": "84c4554d826a7e08bd621d5a09c8a2a42b974a28553c0cf5b48e2e36449d8bc0"
+    },
+    {
+      "text": "关闭风扇",
+      "file": "guan_bi_feng_shan.mp3",
+      "bytes": 7992,
+      "sha256": "14538f6bc2a21ae134709962642e9cc0302d93db985bc86d5f140dc378e11a92"
+    },
+    {
+      "text": "最大音量",
+      "file": "zui_da_yin_liang.mp3",
+      "bytes": 7560,
+      "sha256": "29a67462f73d1925ccda1488617c914e21bfcba3808c37392bd57f68bd74b4bb"
+    },
+    {
+      "text": "切换唤醒词",
+      "file": "qie_huan_huan_xing_ci.mp3",
+      "bytes": 9720,
+      "sha256": "8f055374a63b29d6053065bb064b788b7f395e0095d3c58f98d79015a203866c"
+    },
+    {
+      "text": "小优小优",
+      "file": "xiao_you_xiao_you.mp3",
+      "bytes": 7776,
+      "sha256": "4786b58eafdd56653766976a96abd1f3065f32f8b70309063c60992628cd1082"
+    },
+    {
+      "text": "恢复默认唤醒词",
+      "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+      "bytes": 12096,
+      "sha256": "934e3b06768dd436b2d91e5bf1e3673a009fdb702da97587453a4d12de94eeca"
+    }
+  ]
+}

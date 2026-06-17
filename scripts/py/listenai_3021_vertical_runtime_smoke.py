@@ -119,12 +119,15 @@ class SerialCapture:
             time.sleep(0.05)
         return False
 
+    def snapshot(self) -> str:
+        raw = b"".join(self._chunks)
+        return raw.decode("utf-8", errors="ignore")
+
     def stop(self) -> str:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=2)
-        raw = b"".join(self._chunks)
-        return raw.decode("utf-8", errors="ignore")
+        return self.snapshot()
 
 
 def audio_text_for(target: str, word: str) -> str:
@@ -148,6 +151,32 @@ def generate_audio(words: Sequence[str], out_dir: Path, target: str = "") -> Dic
 
 
 def play(word: str, audio: Dict[str, str], out_dir: Path, repeat: int = 1, gap: float = 0.2) -> Dict[str, Any]:
+    direct_device = os.environ.get("LISTENAI_DIRECT_APLAY_DEVICE", "").strip()
+    if direct_device:
+        gain = os.environ.get("LISTENAI_PLAYBACK_GAIN_DB", "").strip()
+        rate = os.environ.get("LISTENAI_PLAYBACK_RATE", "16000").strip() or "16000"
+        channels = os.environ.get("LISTENAI_PLAYBACK_CHANNELS", "1").strip() or "1"
+        safe = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", word)[:80] or "audio"
+        wav_dir = out_dir / "direct_aplay_wav"
+        wav_dir.mkdir(parents=True, exist_ok=True)
+        wav_path = wav_dir / f"{safe}.wav"
+        if not wav_path.exists() or wav_path.stat().st_size == 0:
+            ffmpeg_cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", audio[word]]
+            if gain:
+                ffmpeg_cmd.extend(["-af", f"volume={gain}dB"])
+            ffmpeg_cmd.extend(["-ar", rate, "-ac", channels, "-f", "wav", str(wav_path)])
+            p = run_cmd(ffmpeg_cmd, out_dir / "playback.log", timeout=60)
+            if p.returncode != 0:
+                return {"word": word, "rc": p.returncode, "audio": audio[word], "backend": "ffmpeg-direct-aplay", "wav": str(wav_path)}
+        rc = 0
+        for idx in range(max(int(repeat), 1)):
+            p = run_cmd(["aplay", "-q", "-D", direct_device, str(wav_path)], out_dir / "playback.log", timeout=90)
+            rc = p.returncode
+            if rc != 0:
+                break
+            if idx + 1 < max(int(repeat), 1):
+                time.sleep(gap)
+        return {"word": word, "rc": rc, "audio": audio[word], "backend": "direct-aplay", "device": direct_device, "gainDb": gain, "rate": rate, "channels": channels, "wav": str(wav_path)}
     p = run_cmd(
         [
             "python3", str(PLAY_SCRIPT), "play", "--platform", "linux",

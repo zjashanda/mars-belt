@@ -78,8 +78,11 @@ def safe_audio_name(text: str, language: str) -> str:
     else:
         common_zh = {
             "小聆小聆": "xiao_ling_xiao_ling",
+            "小优小优": "xiao_you_xiao_you",
+            "小乐小乐": "xiao_le_xiao_le",
             "打开风扇": "da_kai_feng_shan",
             "关闭风扇": "guan_bi_feng_shan",
+            "查询状态": "cha_xun_zhuang_tai",
             "增大音量": "zeng_da_yin_liang",
             "减小音量": "jian_xiao_yin_liang",
             "最大音量": "zui_da_yin_liang",
@@ -88,7 +91,10 @@ def safe_audio_name(text: str, language: str) -> str:
             "退出识别": "tui_chu_shi_bie",
             "学习命令词": "xue_xi_ming_ling_ci",
             "删除命令词": "shan_chu_ming_ling_ci",
+            "查询唤醒词": "cha_xun_huan_xing_ci",
             "切换唤醒词": "qie_huan_huan_xing_ci",
+            "切换到小优小优": "qie_huan_dao_xiao_you_xiao_you",
+            "切换到小乐小乐": "qie_huan_dao_xiao_le_xiao_le",
             "恢复默认唤醒词": "hui_fu_mo_ren_huan_xing_ci",
         }
         name = common_zh.get(text)
@@ -179,6 +185,8 @@ def create_audio_synthesis(
     project_id = str(project.get("id") or "")
     rows = [{"idx": idx + 1, "filename": safe_audio_name(text, language), "text": text} for idx, text in enumerate(texts)]
     comments = f"{project_prefix}_OUTPUT_{stamp}"
+    # Current UI sends params as an object. Older API tolerated a JSON string,
+    # but the restored endpoint now returns 415 for that legacy shape.
     payload = {
         "relatedId": project_id,
         "vcn": speaker["value"],
@@ -186,7 +194,7 @@ def create_audio_synthesis(
         "vol": "50",
         "compress": compress,
         "comments": comments,
-        "params": json.dumps({"rows": rows}, ensure_ascii=False),
+        "params": {"rows": rows},
     }
     client.post("/fw/voice/output/add", payload)
     output = None

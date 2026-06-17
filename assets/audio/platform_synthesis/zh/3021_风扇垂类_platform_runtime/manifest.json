@@ -1,0 +1,57 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "中文",
+  "languageCode": "zh",
+  "suite": "3021_风扇垂类_platform_runtime",
+  "speaker": {
+    "label": "叶子（情感）",
+    "value": "x2_xiaoye"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": null,
+  "items": [
+    {
+      "text": "小聆小聆",
+      "file": "xiao_ling_xiao_ling.mp3",
+      "bytes": 7560,
+      "sha256": "0d6549b8c8f71fa4c178ef249d40c8210aaece6caf1e3a0f6fdecd45ee9deec4"
+    },
+    {
+      "text": "打开风扇",
+      "file": "da_kai_feng_shan.mp3",
+      "bytes": 7776,
+      "sha256": "d2a3582861c1b2818ffd63b638735a3ca7274e2b3e2a497ecb60093f0a5912b0"
+    },
+    {
+      "text": "关闭风扇",
+      "file": "guan_bi_feng_shan.mp3",
+      "bytes": 7992,
+      "sha256": "bf84eae6dad5f8587d9f5fc7f723462d76e33aa9da89171b92ab686fbdc84209"
+    },
+    {
+      "text": "最大音量",
+      "file": "zui_da_yin_liang.mp3",
+      "bytes": 7560,
+      "sha256": "460b46f651a881bb0c542eb90049872fbcece54a8466c73618eddfbc9059083d"
+    },
+    {
+      "text": "切换唤醒词",
+      "file": "qie_huan_huan_xing_ci.mp3",
+      "bytes": 9720,
+      "sha256": "4f4f183ce618082a9d534a063d46c0251613ebce4fec687f8ede420bcada667f"
+    },
+    {
+      "text": "小优小优",
+      "file": "xiao_you_xiao_you.mp3",
+      "bytes": 7776,
+      "sha256": "69c809c47ab96a0bcd81a69c3ace42cfd5f6233bee56abd7ab471cda8eb583ff"
+    },
+    {
+      "text": "恢复默认唤醒词",
+      "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+      "bytes": 12096,
+      "sha256": "13319e8101736e702dc19f4b54a7726d7c2eb9d1fc51902bfa997fef75ec6866"
+    }
+  ]
+}

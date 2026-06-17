@@ -1,0 +1,145 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "中文",
+  "languageCode": "zh",
+  "suite": "3021_通用垂类_platform_runtime",
+  "speaker": {
+    "label": "叶子（情感）",
+    "value": "x2_xiaoye"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": {
+    "projectName": "ZH_AUDIO_SYNTH_3021_通用垂类_PLATFORM_RUNTIME_20260617_110453",
+    "projectId": "2067081018351935490",
+    "outputId": "2067081022932115457",
+    "fileId": "2067081022005174273",
+    "zipPath": "artifacts/audio-synthesis-assets/20260617-110453/ZH_AUDIO_SYNTH_3021_通用垂类_PLATFORM_RUNTIME_OUTPUT_20260617_110453.zip",
+    "items": [
+      {
+        "file": "guan_bi_feng_shan.mp3",
+        "bytes": 7992,
+        "sha256": "14538f6bc2a21ae134709962642e9cc0302d93db985bc86d5f140dc378e11a92"
+      },
+      {
+        "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+        "bytes": 12096,
+        "sha256": "49d0558918f6ab3434fa826a22b621bf689b7db300edf27228bbf7773403c317"
+      },
+      {
+        "file": "qie_huan_huan_xing_ci.mp3",
+        "bytes": 9720,
+        "sha256": "85cd5eef0c99d3bf4e9062acf26451a4952f27dcd02b5e599ab830fd4fd43916"
+      },
+      {
+        "file": "shan_chu_ming_ling_ci.mp3",
+        "bytes": 10368,
+        "sha256": "a7bf5928e861b59209709dc5b44f0ebdf8cfbef27fa0150efa3c908a59690cbe"
+      },
+      {
+        "file": "xiao_ling_xiao_ling.mp3",
+        "bytes": 7560,
+        "sha256": "ea32038eb9126bbcd0fcc9241b0c9879d63a4448a35652b260a6b1b76990b261"
+      },
+      {
+        "file": "xiao_you_xiao_you.mp3",
+        "bytes": 7776,
+        "sha256": "0c8992bb72d23ba3ad6414981f9495c9e462f1f5836494f7b12e3243ed0dde36"
+      },
+      {
+        "file": "xue_xi_ming_ling_ci.mp3",
+        "bytes": 9936,
+        "sha256": "401a6a1afeb20c26adef79f29d259b4af39fdf3bc3a5f799d2d125056680d2b9"
+      },
+      {
+        "file": "zh_4e7788c66e.mp3",
+        "bytes": 8640,
+        "sha256": "e256cf5693cdfc90ac27b3950d4f09cedf5fac137c4638f86bc6477c772c1006"
+      },
+      {
+        "file": "zh_9b8900de78.mp3",
+        "bytes": 7560,
+        "sha256": "20b18ac87774620e397c75a564d0966f0f5c94a7ebe612696359a577b8d4b976"
+      },
+      {
+        "file": "zh_e9a85b8cfd.mp3",
+        "bytes": 8424,
+        "sha256": "f4bb50f765d67115e418cbfa0fe6f87f710e8b7976a5f09d459f9526ed44e687"
+      },
+      {
+        "file": "zui_da_yin_liang.mp3",
+        "bytes": 7560,
+        "sha256": "f792175e579f01a7a99279e41767eca45d969394942d9862ea71de15b6ec0a6b"
+      }
+    ],
+    "platformRecordsKept": true
+  },
+  "items": [
+    {
+      "text": "小聆小聆",
+      "file": "xiao_ling_xiao_ling.mp3",
+      "bytes": 7560,
+      "sha256": "ea32038eb9126bbcd0fcc9241b0c9879d63a4448a35652b260a6b1b76990b261"
+    },
+    {
+      "text": "打开垃圾桶",
+      "file": "zh_e9a85b8cfd.mp3",
+      "bytes": 8424,
+      "sha256": "f4bb50f765d67115e418cbfa0fe6f87f710e8b7976a5f09d459f9526ed44e687"
+    },
+    {
+      "text": "关闭垃圾桶",
+      "file": "zh_4e7788c66e.mp3",
+      "bytes": 8640,
+      "sha256": "e256cf5693cdfc90ac27b3950d4f09cedf5fac137c4638f86bc6477c772c1006"
+    },
+    {
+      "text": "最大音量",
+      "file": "zui_da_yin_liang.mp3",
+      "bytes": 7560,
+      "sha256": "f792175e579f01a7a99279e41767eca45d969394942d9862ea71de15b6ec0a6b"
+    },
+    {
+      "text": "切换唤醒词",
+      "file": "qie_huan_huan_xing_ci.mp3",
+      "bytes": 9720,
+      "sha256": "85cd5eef0c99d3bf4e9062acf26451a4952f27dcd02b5e599ab830fd4fd43916"
+    },
+    {
+      "text": "小优小优",
+      "file": "xiao_you_xiao_you.mp3",
+      "bytes": 7776,
+      "sha256": "0c8992bb72d23ba3ad6414981f9495c9e462f1f5836494f7b12e3243ed0dde36"
+    },
+    {
+      "text": "恢复默认唤醒词",
+      "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+      "bytes": 12096,
+      "sha256": "49d0558918f6ab3434fa826a22b621bf689b7db300edf27228bbf7773403c317"
+    },
+    {
+      "text": "学习命令词",
+      "file": "xue_xi_ming_ling_ci.mp3",
+      "bytes": 9936,
+      "sha256": "401a6a1afeb20c26adef79f29d259b4af39fdf3bc3a5f799d2d125056680d2b9"
+    },
+    {
+      "text": "关闭风扇",
+      "file": "guan_bi_feng_shan.mp3",
+      "bytes": 7992,
+      "sha256": "14538f6bc2a21ae134709962642e9cc0302d93db985bc86d5f140dc378e11a92"
+    },
+    {
+      "text": "我要吹风",
+      "file": "zh_9b8900de78.mp3",
+      "bytes": 7560,
+      "sha256": "20b18ac87774620e397c75a564d0966f0f5c94a7ebe612696359a577b8d4b976"
+    },
+    {
+      "text": "删除命令词",
+      "file": "shan_chu_ming_ling_ci.mp3",
+      "bytes": 10368,
+      "sha256": "a7bf5928e861b59209709dc5b44f0ebdf8cfbef27fa0150efa3c908a59690cbe"
+    }
+  ]
+}

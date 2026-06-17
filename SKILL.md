@@ -56,6 +56,7 @@ system: |
   27. 平台打包/固件/SDK 真机验证报告必须按“标题下测试结论 -> 测试目的 -> 测试方案 -> 测试用例和结果 -> 测试问题与分析 -> 证据文件”结构输出；详细规则见 `references/platform_test_report_writing_standard.md`。报告必须量化覆盖范围和结果，不能只写“全部通过”。
   28. 固件运行态语音识别音频优先使用平台「合成管理 -> 音频合成」正式构建产物：先查 `assets/audio/platform_synthesis/<lang>/<suite>/`，缺失时用 `scripts/py/listenai_platform_audio_synthesis_cache.py` 走正式音频合成项目/输出构建并下载；禁止把 `/fw/common/generateAudio` 试听接口产物作为识别主证据。中文合成必须选择中文发音人并排除英文/英语标识候选；英文合成必须选择英文/英语标识发音人。音频资产属于测试资料，必须随 skill git 同步。详细流程见 `references/platform_audio_synthesis_test_assets.md` 和 `references/english_platform_audio_synthesis_runtime_workflow.md`。
   29. 3021 英文版本验证必须先实时扫描 UI 当前 `英文 + CSK3021` 支持矩阵，不能从中文垂类外推。若 UI 仅开放 `通用垂类`，则“每垂类一个代表品类”只需在通用垂类下选一个代表品类，例如 `风扇`；报告必须写清 `风扇` 是品类不是英文风扇垂类。基础英文能力按 3 包最小规则执行，`timeout<=1` 左边界包只验证唤醒+超时，不作为命令词正例；详细规则见 `references/3021_english_ui_minrule_validation_lessons.md`。
+  30. 3021 中文全垂类运行态 runner 必须执行状态前置检查和静态配置门禁：烧录目标包前可用当前固件 `clear.configall` 预清历史状态；目标包启动后禁止对语音注册包执行后置 `clear.configall`；`wkword=255` 必须结合 `cur wk id`/`not waked!` 与多唤醒协议模式判定，不能把协议切换包的合法 `wkword=255` 误拦截；多唤醒 `切换唤醒词/恢复默认唤醒词/查询唤醒词` 与普通协议词重名直接归为配置构造错误；`wakeTimeout<=1` 左边界包只跑边界专用 wake+timeout 用例集。详细规则见 `references/3021_runtime_state_and_special_control_validation.md`。
 
 ---
 
@@ -131,7 +132,7 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 若用户明确要求在账号页面查看新生成物，使用：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast --keep-platform-records`，并在回复中明确临时记录名称和 ID。
 - Token 仍按本 skill 规则从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取。
 - 结果统一写入 `artifacts/synthesis-validation/<YYYYMMDD-HHMMSS>/`，不得散落到其他目录。
-- 固件识别用音频必须走「音频合成」正式构建而不是试听接口：`PYTHONPATH=scripts/py python3 scripts/py/listenai_platform_audio_synthesis_cache.py --language en --suite 3021_fan_base --text 'Hello My Dear' ...` 或 `--language zh --suite 3021_fan_base --text '小聆小聆' ...`。该脚本先复用本地资产，缺失时创建平台可见项目并下载 zip；需要人工在平台查看时使用 `--force-synthesize` 重新生成并保留项目记录。
+- 固件识别用音频必须走「音频合成」正式构建而不是试听接口：`PYTHONPATH=scripts/py python3 scripts/py/listenai_platform_audio_synthesis_cache.py --language en --suite 3021_fan_base --text 'Hello My Dear' ...` 或 `--language zh --suite 3021_fan_base --text '小聆小聆' ...`。该脚本先复用本地资产，缺失时创建平台可见项目并下载 zip；需要人工在平台查看时使用 `--force-synthesize` 重新生成并保留项目记录。当前 `/fw/voice/output/add` 的 `params` 必须按 UI 形态提交为对象 `{rows:[...]}`，不要使用历史 JSON 字符串形态。
 - `assets/audio/platform_synthesis/<lang>/<suite>/` 属于小体积可复用测试资产，需要随 git 同步；`artifacts/` 下的音频合成 zip、截图、运行日志和 token 不同步。
 
 ## 必测链路
@@ -562,6 +563,7 @@ validation_rules:
 # 3021 垂类最小覆盖验证
 
 - 3021 全垂类 UI-only 打包、固件包真机验证、SDK 编译产物验证、语音注册连续学习收敛经验见 `references/3021_ui_only_runtime_validation_lessons.md`。遇到同类任务时先读取该文档，再设计包矩阵和运行态验证。
+- 3021 运行态验证一旦出现 `wkword=255`、语音注册失败、多唤醒切换异常、左边界包误判、单个命令缺失或声学链路疑点，先读取 `references/3021_runtime_validation_closure_playbook.md` 和 `references/3021_runtime_state_and_special_control_validation.md`，按“静态门禁 -> 状态前置 -> 配置专用用例 -> 单词专项 -> 冒烟固件隔离”的顺序闭环，不要直接扩大重跑范围。
 - 3021 英文版本按中文思路重测时，同时读取 `references/3021_english_ui_minrule_validation_lessons.md` 和 `references/english_platform_audio_synthesis_runtime_workflow.md`；英文支持范围以 UI 实时扫描为准，英文音频必须来自平台音频合成正式产物。
 - 平台垂类验证不要堆全量词表。默认使用“默认唤醒 + 2 个代表业务命令 + 1 个音量命令 + 多唤醒切换/恢复 + 语音注册（仅支持垂类）”做最小高价值覆盖；静态校验再确认所选词、同义词、协议和能力开关已落入 `web_config.json`。
 - 当前已沉淀的 3021 垂类覆盖口径：
@@ -591,18 +593,22 @@ validation_rules:
 
 ## 语音注册
 - 只有打开 `voiceRegEnable` 后才生成并执行语音注册专项；未打开时一律跳过语音注册相关用例
-- 语音注册验证前优先执行 `clear.configall` 并重新上电，清理历史 `wkword/regSave/reg_cmd_count`；不清历史配置会导致模板已满、删除状态残留或学习词已存在等假失败。
+- 语音注册包清理必须分阶段处理：允许在烧录目标包之前用当前固件执行一次 `clear.configall` 预清历史 `wkword/regSave/reg_cmd_count`；目标语音注册包烧录并启动后禁止再执行后置 `clear.configall`，否则会清掉目标包生成的 `reg_cmd_count/study_config`，导致学习入口不可用或误判为语音注册失败。
 - 语音注册控制词不得在算法导入模板里作为普通协议命令重复出现；`学习命令词/删除命令词/学习唤醒词/删除唤醒词/删除全部命令词/退出学习/退出删除` 等入口必须只来自 UI 语音注册配置生成的 `special_type=语音注册控制相关` 词条。若 `web_config.json` 同时存在普通协议命令和 special 控制词，运行时会优先命中普通协议命令并只发送 `snd_protocol`，不会进入 `Reg info/cmdlist get/wIvwRegist` 学习态，应直接归为配置构造问题。
 - 进入 `学习命令词`、`学习唤醒词`、`删除命令词`、`删除唤醒词` 等交互态后，必须等待当前提示播报结束（以 `play stop` 为准）且算法状态恢复，再允许下一句交互
 - 语音注册专项只能使用平台当前支持的触发词、控制词和功能词；`references/语音注册.log` 只可用于理解状态机和日志，不可直接拿其中历史调试命令词做测试输入
-- 除字数上下限外，其余平台语音注册配置都要覆盖正例和反例；学习语料必须本地自定义合成，不能直接使用命令词、唤醒词或提示词内容
+- 除字数上下限外，其余平台语音注册配置都要覆盖正例和反例；连续学习语料必须本地自定义合成，不能直接使用命令词、唤醒词或提示词内容；指定学习按 UI `study_config.reg_commands` 选择目标后，注册样本优先重复目标命令本身。
 - 学习成功后必须使用学习语料验证真实生效；学习失败后必须使用同一学习语料验证不生效
 - `specificLearn` 和 `contLearn` 必须按当前固件的阶段流转自适应：
   - 若 `学习命令词` 后已直接出现 `cmdlist get[...]` / `Reg info` / `reg status:1`，说明已直入学习态，不得再强行补说目标命令
-  - 若未直入学习态，再按当前阶段配置补说目标命令
+  - 若未直入学习态，再按当前阶段配置补说目标命令；`specificLearn` 且 `study_config.reg_commands` 存在多个目标时，应按 `学习命令词 -> 目标命令 -> 重复目标命令本身` 执行。不要把自然别名样本用于多目标指定学习，否则部分垂类会出现相似度/写入错误或未进入目标学习态。
+  - 多目标指定学习优先选当前 UI `reg_commands` 中的业务 preferred；没有时按 UI `reg_commands` 顺序选择第一个目标；若专项复测证明该目标不稳定，再记录证据后切换到同配置内其他可学习目标
 - `contLearn` 命令词学习若出现 `reg over!` 或学习模板已满，先走两步 `删除命令词` 清当前模板，再重新进入 `学习命令词`；重新进入学习态后直接说注册语料，不再额外重复目标命令
-- `contLearn` 注册样本不得直接使用内置命令词本身；进入学习态后使用合法非内置别名样本，例如目标 `打开风扇` 使用 `我要吹风`，否则容易被算法判为已有命令/冲突样本并出现 `reg failed` 或 `reg length error`。
+- `contLearn` 注册样本不得直接使用内置命令词本身；进入学习态后使用合法非内置别名样本，例如目标 `打开风扇/关闭风扇` 可使用 `我要吹风`，目标 `查询状态` 可使用 `启动设备`，否则容易被算法判为已有命令/冲突样本并出现 `reg failed` 或 `reg length error`。
+- 语音注册成功判据必须使用强 marker：`wIvwRegistArbitrate success`、`save new voice.bin`、`reg cmd over success`、`reg auto next`、`reg over!` 或 `reg status: 3`。单独出现 `voice regging over` 不能判成功；只要伴随 `reg length error`、`wreg write failed`、`wIvwRegistWrite fail`、`reg failed` 或 `error cnt >`，必须按失败闭环，不能把失败后退出态当 PASS。
 - `wakeTimeout=1 + contLearn + retryCount=1` 属于左边界/超时观察组合，只验证超时、唤醒窗口和边界行为，不作为语音注册正向学习成功包；正向连续学习必须使用正常超时纠偏包闭环。
+- 命令级识别疑点必须用单词专项复测闭环：当同包唤醒、多唤醒、语音注册或其他命令均通过，仅单个业务词缺失时，使用 `run_3021_firmware_batch_verify.py --command-probe-word <命令词> --command-probe-repeat 3` 重复验证，并以 `commandProbeCounts` 归因。专项 PASS 说明主批次缺失属于声学/状态偶发，不得写成固件或平台配置失败。
+- 归因必须落到具体类别：配置构造、测试用例、状态清理、声学/状态偶发、台架/设备链路、固件产物、平台缺陷。没有证据时不得把 `CONFIG_FAIL`、左边界裁剪或单词专项 PASS 的偶发缺失写成平台缺陷。
 - 负向用例的错误语料选择必须避免误触发真实语音注册功能：
   - 语音注册控制词/删除词只允许用于“保留词冲突”“删除链路”“重试耗尽”这类明确场景
   - 普通恢复/耗尽负例优先使用平台支持的普通功能词
@@ -632,6 +638,8 @@ validation_rules:
 - 做切换验证前，必须先按平台默认唤醒词格式协议新增 2 个额外唤醒词；只有 1 个唤醒词时不得进入切换验证
 - 打包什么配置就验证什么配置：当前固件启用哪一种切换模式，就只验证该模式下可用的切换、恢复、查询、默认唤醒词、冻结唤醒词等能力，并覆盖正反例
 - `specified`、`loop`、`protocol` 三种模式需要分别独立打包、独立验证，不能混成一套结论
+- `specified`/`loop` 语音切换模式下，`切换唤醒词`、`恢复默认唤醒词`、`查询唤醒词` 必须只以 `special_type=多唤醒词切换` 或功能控制类 special 词存在；若算法模板同时导入同名普通协议命令，普通协议词会遮蔽 special 状态机，runner 必须在静态阶段直接 `CONFIG_FAIL`，不继续烧录/播放验证该功能。
+- `protocol` 协议切换模式下，设备启动配置可能显示 `wkword=255`；这不等同于状态污染。runner 进入声学验证前应先发送默认唤醒词的协议切换帧，例如 `multi_wakeup.switch_list[0].snd_protocol`，再发送业务协议探针。只有后续日志出现 `cur wk id: ... != ...`、`not waked!` 或声学唤醒被唤醒态拒绝，才按运行态无效唤醒状态处理。
 - 切换、恢复、查询过程中若出现设备自动重启、不识别、不播报或协议链路整体异常，按“重启异常判定规则”处理：
   - 自行重启一律 `FAIL`
   - 必须定位到触发重启的动作、步骤或具体 case

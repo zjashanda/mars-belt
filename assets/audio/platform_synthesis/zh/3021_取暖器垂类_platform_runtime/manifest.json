@@ -1,0 +1,57 @@
+{
+  "assetType": "platform-audio-synthesis-test-asset",
+  "language": "中文",
+  "languageCode": "zh",
+  "suite": "3021_取暖器垂类_platform_runtime",
+  "speaker": {
+    "label": "叶子（情感）",
+    "value": "x2_xiaoye"
+  },
+  "source": "合成管理/音频合成正式输出，不是 generateAudio 试听接口",
+  "usage": "固件运行态验证优先复用；缺失时使用本脚本重新走音频合成构建。该目录是测试资产，需要随 skill git 同步，不是 git 忽略缓存。",
+  "createdBuild": null,
+  "items": [
+    {
+      "text": "小聆小聆",
+      "file": "xiao_ling_xiao_ling.mp3",
+      "bytes": 7560,
+      "sha256": "8782f044357ce0cd4d6a56682fd79b438284cb9836a12b6d405456d4907f8f91"
+    },
+    {
+      "text": "打开取暖器",
+      "file": "zh_a5353ebd2c.mp3",
+      "bytes": 8856,
+      "sha256": "4fabf74b68d499c1595f65b99e1be4570a637850cf204dd8a1b358673158145d"
+    },
+    {
+      "text": "关闭取暖器",
+      "file": "zh_7c91cc6abf.mp3",
+      "bytes": 9504,
+      "sha256": "13ec596aa211304453ccfcb0f5c6ae688174390fb5f11e1b791c106370a17b77"
+    },
+    {
+      "text": "最大音量",
+      "file": "zui_da_yin_liang.mp3",
+      "bytes": 7560,
+      "sha256": "8cf2d8d7c17062420862227929c4f6dc6f90c651c9cdbc7e3d71cf35743f2e89"
+    },
+    {
+      "text": "切换唤醒词",
+      "file": "qie_huan_huan_xing_ci.mp3",
+      "bytes": 9720,
+      "sha256": "4f4f183ce618082a9d534a063d46c0251613ebce4fec687f8ede420bcada667f"
+    },
+    {
+      "text": "小优小优",
+      "file": "xiao_you_xiao_you.mp3",
+      "bytes": 7776,
+      "sha256": "09d3d7d289e6082c3fedaa47268fc18f6a5e75e2e2058606b16f0fdc8536b749"
+    },
+    {
+      "text": "恢复默认唤醒词",
+      "file": "hui_fu_mo_ren_huan_xing_ci.mp3",
+      "bytes": 12096,
+      "sha256": "acad844d966172e81592e949adfa5c86f043a5e075617016c7f8b312409d9c44"
+    }
+  ]
+}
