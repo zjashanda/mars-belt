@@ -39,3 +39,35 @@ references/listenai-token-tool*/profiles/
 references/listenai-token-tool*/tokens/
 profiles/
 tokens/
+# Chrome component/cache directories accidentally created under references by profile runs
+references/ActorSafetyLists/
+references/AmountExtractionHeuristicRegexes/
+references/CaptchaProviders/
+references/CertificateRevocation/
+references/Crowd Deny/
+references/FileTypePolicies/
+references/FirstPartySetsPreloaded/
+references/GrShaderCache/
+references/GraphiteDawnCache/
+references/MEIPreload/
+references/NativeMessagingHosts/
+references/OnDeviceHeadSuggestModel/
+references/OriginTrials/
+references/PKIMetadata/
+references/PrivacySandboxAttestationsPreloaded/
+references/SSLErrorAssistant/
+references/Safe Browsing/
+references/SafetyTips/
+references/ShaderCache/
+references/Subresource Filter/
+references/TrustTokenKeyCommitments/
+references/WasmTtsEngine/
+references/WidevineCdm/
+references/ZxcvbnData/
+references/component_crx_cache/
+references/extensions_crx_cache/
+references/hyphen-data/
+references/segmentation_platform/
+references/first_party_sets.db*
+references/Last Version
+references/Variations
