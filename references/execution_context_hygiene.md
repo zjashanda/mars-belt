@@ -50,3 +50,10 @@ rg -n "keyword" SKILL.md references scripts \
 - 同步前构建可迁移副本，排除：`TOOLS.md`、`plan.md`、`artifacts/`、`profiles/`、`tokens/`、Chrome `Local State`、`Singleton*`、`DevToolsActivePort`、缓存和烧录临时 `app.bin`。
 - 同步前校验 JSON/Markdown/zip 可读，避免乱码和损坏文件。
 - 回复只报告 commit、push 状态和关键变更，不粘贴完整 diff。
+
+## artifacts 知识沉淀
+
+- `artifacts/` 只保存本机历史原始证据，不同步 git，也不作为其他 PC 使用 skill 的必要输入。
+- 大任务完成后，必须把可复用经验抽象到 `references/`、稳定脚本或 `assets/`，不要只留在任务报告和串口日志里。
+- 历史任务族与已沉淀文件的对应关系见 `references/artifacts_knowledge_index.md`。
+- 遇到烧录、串口、语音注册、多唤醒、播报合成、SDK 或报告类已知现象时，先按 `references/known_issue_diagnosis_matrix.md` 执行最短闭环；只有需要追溯本机原始现场时才回看 `artifacts/`。

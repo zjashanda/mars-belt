@@ -59,6 +59,7 @@ system: |
   30. 3021 中文全垂类运行态 runner 必须执行状态前置检查和静态配置门禁：烧录目标包前可用当前固件 `clear.configall` 预清历史状态；目标包启动后禁止对语音注册包执行后置 `clear.configall`；`wkword=255` 必须结合 `cur wk id`/`not waked!` 与多唤醒协议模式判定，不能把协议切换包的合法 `wkword=255` 误拦截；多唤醒 `切换唤醒词/恢复默认唤醒词/查询唤醒词` 与普通协议词重名直接归为配置构造错误；`wakeTimeout<=1` 左边界包只跑边界专用 wake+timeout 用例集。详细规则见 `references/3021_runtime_state_and_special_control_validation.md`。
   31. token 失效处理优先使用 `references/listenai-token-tool.zip` 的持久 profile 方案：首次在本机桌面扫码生成 `profiles/listenai` 和 `tokens/listenai-token.txt`，后续先跑 `node token-tool.js get --headless`；只有 token 文件生成且 `/getLoginUser` 校验通过，才写回 `TOOLS.md`。详细流程见 `references/platform_token_tool_login_workflow.md`。Profile、tokens、截图、cookie 和 `TOOLS.md` 禁止同步 git。
   32. 控制 token 消耗：`plan.md` 只保留当前状态，历史超过约 200KB 归档到 `artifacts/plan_archive/`；长日志、Chrome 完整进程、报告全文和大型 JSON 默认写文件不贴回复；搜索时排除 `artifacts/`、`scripts/artifacts/`、`node_modules/`、Chrome profile。详细规则见 `references/execution_context_hygiene.md`。
+  33. `artifacts/` 只作为本机历史证据库，不同步 git，也不作为跨 PC 运行依赖。历史任务中可复用的经验必须沉淀为轻量文档、脚本或资产：任务族索引见 `references/artifacts_knowledge_index.md`，故障定位和复测矩阵见 `references/known_issue_diagnosis_matrix.md`。遇到相似问题时先读矩阵执行最短闭环，只有需要追溯本机原始日志/截图/下载包时才回看 `artifacts/`。
 
 ---
 
