@@ -57,6 +57,8 @@ system: |
   28. 固件运行态语音识别音频优先使用平台「合成管理 -> 音频合成」正式构建产物：先查 `assets/audio/platform_synthesis/<lang>/<suite>/`，缺失时用 `scripts/py/listenai_platform_audio_synthesis_cache.py` 走正式音频合成项目/输出构建并下载；禁止把 `/fw/common/generateAudio` 试听接口产物作为识别主证据。中文合成必须选择中文发音人并排除英文/英语标识候选；英文合成必须选择英文/英语标识发音人。音频资产属于测试资料，必须随 skill git 同步。详细流程见 `references/platform_audio_synthesis_test_assets.md` 和 `references/english_platform_audio_synthesis_runtime_workflow.md`。
   29. 3021 英文版本验证必须先实时扫描 UI 当前 `英文 + CSK3021` 支持矩阵，不能从中文垂类外推。若 UI 仅开放 `通用垂类`，则“每垂类一个代表品类”只需在通用垂类下选一个代表品类，例如 `风扇`；报告必须写清 `风扇` 是品类不是英文风扇垂类。基础英文能力按 3 包最小规则执行，`timeout<=1` 左边界包只验证唤醒+超时，不作为命令词正例；详细规则见 `references/3021_english_ui_minrule_validation_lessons.md`。
   30. 3021 中文全垂类运行态 runner 必须执行状态前置检查和静态配置门禁：烧录目标包前可用当前固件 `clear.configall` 预清历史状态；目标包启动后禁止对语音注册包执行后置 `clear.configall`；`wkword=255` 必须结合 `cur wk id`/`not waked!` 与多唤醒协议模式判定，不能把协议切换包的合法 `wkword=255` 误拦截；多唤醒 `切换唤醒词/恢复默认唤醒词/查询唤醒词` 与普通协议词重名直接归为配置构造错误；`wakeTimeout<=1` 左边界包只跑边界专用 wake+timeout 用例集。详细规则见 `references/3021_runtime_state_and_special_control_validation.md`。
+  31. token 失效处理优先使用 `references/listenai-token-tool.zip` 的持久 profile 方案：首次在本机桌面扫码生成 `profiles/listenai` 和 `tokens/listenai-token.txt`，后续先跑 `node token-tool.js get --headless`；只有 token 文件生成且 `/getLoginUser` 校验通过，才写回 `TOOLS.md`。详细流程见 `references/platform_token_tool_login_workflow.md`。Profile、tokens、截图、cookie 和 `TOOLS.md` 禁止同步 git。
+  32. 控制 token 消耗：`plan.md` 只保留当前状态，历史超过约 200KB 归档到 `artifacts/plan_archive/`；长日志、Chrome 完整进程、报告全文和大型 JSON 默认写文件不贴回复；搜索时排除 `artifacts/`、`scripts/artifacts/`、`node_modules/`、Chrome profile。详细规则见 `references/execution_context_hygiene.md`。
 
 ---
 
@@ -198,6 +200,10 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 标准命令：`python3 scripts/py/listenai_platform_api_validation.py`。
 - 模块命令：`PYTHONPATH=scripts/py python3 -m platform_api_validation.validation`。
 - Token 统一从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取，报告中不得输出 token 明文。
+- Token 失效时优先使用 `references/listenai-token-tool.zip` 的持久 profile 方案，流程见 `references/platform_token_tool_login_workflow.md`：首次桌面扫码后必须生成 `tokens/listenai-token.txt` 且校验 `/getLoginUser` 通过；后续使用 `node token-tool.js get --headless --chrome /usr/bin/google-chrome` 尝试免扫码刷新。若扫码后仍停留平台登录页、`localStorage.TOKEN` 为空或 token 文件未生成，不能判定成功。
+- `references/Profile 7` 仍作为兼容方案，按 `references/platform_profile_login_token_refresh.md` 尝试自动刷新：运行 `NODE_PATH="$PWD/scripts/ui/node_modules" node scripts/ui/refresh_platform_token_from_profile.js --profile-dir "references/Profile 7" --timeout-ms 180000`。只有脚本输出 `needQrScan=true` 或登录超时，才需要用户扫码或补充 token；不要在回复中输出 token 明文。
+- 需要验证长期稳定性时，使用 `scripts/ui/monitor_platform_token_refresh_until_9.js` 定时校验 token、触发 Profile 刷新并做 UI smoke；结束后用 `scripts/ui/summarize_platform_token_refresh_monitor.js --summary <summary.json> --out <final_report.md>` 生成脱敏报告。只有 `tokenValidAfterRefresh=true` 且 `uiAccessOk=true` 才能作为后续 UI 参数配置自动化的登录前置条件；多轮 `needQrScan=true` 只能说明登录路径可达但缺少有效扫码登录态。
+- 执行过程必须按 `references/execution_context_hygiene.md` 控制上下文：长日志写文件、回复只给摘要、`plan.md` 定期归档瘦身。
 - 结果统一写入 `artifacts/platform-validation/<YYYYMMDD-HHMMSS>/`。
 
 ## 当前已落地链路

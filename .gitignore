@@ -27,3 +27,15 @@ references/Profile*/
 references/**/Cache/
 references/**/Code Cache/
 references/**/GPUCache/
+# Runtime browser/profile/token state
+references/Local State
+references/First Run
+references/DevToolsActivePort
+references/Singleton*
+references/LOCK
+references/BrowserMetrics*.pma
+references/.com.google.Chrome.*
+references/listenai-token-tool*/profiles/
+references/listenai-token-tool*/tokens/
+profiles/
+tokens/
