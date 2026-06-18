@@ -23,13 +23,6 @@ DEFAULT_POWER_ON_CMDS = [
     "sleep:3",
     "uut-switch2.on",
 ]
-LEGACY_POWER_ON_CMDS = [
-    ["uut-switch2.off", "uut-switch1.off", "uut-switch1.on"],
-    ["uut-switch3.off", "uut-switch1.off", "uut-switch1.on"],
-    ["uut-switch2.off", "uut-switch3.off", "uut-switch1.off", "uut-switch1.on", "uut-switch2.on"],
-]
-
-
 def as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -530,7 +523,7 @@ def apply_runtime_ports(device_info: Dict[str, Any], log_port: str = "", ctrl_po
     pretest["ctrlPort"] = selected_ctrl_port
     pretest["ctrlBaudRate"] = int(pretest.get("ctrlBaudRate") or 115200)
     current_power_cmds = pretest.get("powerOnCmds")
-    if not current_power_cmds or current_power_cmds in LEGACY_POWER_ON_CMDS:
+    if current_power_cmds != DEFAULT_POWER_ON_CMDS:
         pretest["powerOnCmds"] = list(DEFAULT_POWER_ON_CMDS)
     pretest.setdefault("cmdDelay", 0.3)
     pretest.setdefault("bootWait", 5)

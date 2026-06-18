@@ -486,3 +486,4 @@ MarsPlatform 固件打包、烧录与验证自治 Agent Skill（自动决策 / �
 
 - Runtime evidence under `artifacts/`, local tokens, browser profiles, and machine-specific configs are intentionally excluded from this published skill.
 - Historical lessons are carried by `references/artifacts_knowledge_index.md` and `references/known_issue_diagnosis_matrix.md`, not by raw local logs.
+- Current 3021 bench control is single-source: `uut-switch1` power, `uut-switch2` protocol gate, `uut-switch3` boot; every power edge gates protocol first.

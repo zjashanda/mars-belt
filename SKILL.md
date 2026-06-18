@@ -44,7 +44,7 @@ system: |
     - `Uart_Burn_Tool` 只允许烧录 `scripts/burn/app.bin`
     - 禁止把任意外部 `.bin` 路径直接喂给烧录工具
   17. 当前本地 3021 台架默认口径：日志 `/dev/ttyACM0@115200`、协议 `/dev/ttyACM2@9600`、控制 `/dev/ttyACM4@115200`、烧录 `/dev/ttyACM0@460800`；`/dev/ttyACM1` 为空口不要使用；电源控制 `uut-switch1`，协议连接门控 `uut-switch2`，boot 控制 `uut-switch3`。
-  18. 3021 正常运行态上电必须使用协议口门控：`uut-switch2.off -> uut-switch3.off -> uut-switch1.off -> uut-switch1.on -> wait 3s -> uut-switch2.on`。脚本化配置中使用 `sleep:3` 表示该等待点；烧录进 boot 前先执行 `uut-switch2.off` 断开协议口，再执行 `uut-switch1.off -> uut-switch3.on -> uut-switch1.on -> uut-switch3.off`，烧录后按正常门控上电恢复。
+  18. 3021 烧录/验证控制逻辑只有一个正确口径：任何断电/上电动作前必须先 `uut-switch2.off` 断开协议口，上电稳定后再 `uut-switch2.on` 恢复协议通信。正常运行态上电固定为 `uut-switch2.off -> uut-switch3.off -> uut-switch1.off -> uut-switch1.on -> wait 3s -> uut-switch2.on`；烧录进 boot 固定为 `uut-switch2.off -> uut-switch1.off -> uut-switch3.on -> uut-switch1.on -> uut-switch3.off`；烧录结束后必须按正常运行态上电流程恢复。`uut-switch2` 只做协议口门控，`uut-switch3` 才是 3021 boot 控制线。
   19. 根目录 `orion.skilltest.json` 是 Augur/Orion 展示“可测模块 -> 测试方案 -> 自然语言用例 -> 执行证据”的结构化索引；新增、删除或调整平台功能测试模块、入口脚本、证据口径、风险等级、默认用例时，必须同步更新该 JSON，并执行 `python3 -m json.tool orion.skilltest.json` 校验。
   20. 同步 git 前必须先构建可迁移发布副本：包含 `SKILL.md`、`orion.skilltest.json`、必要脚本、模板、参考资料和工具；排除 `TOOLS.md`、`deviceInfo_generated.json`、`plan.md`、`artifacts/`、烧录临时 `app.bin`、缓存和本机结果。其他 PC 拉取后应能基于 `TOOLS.example.md` 与 `deviceInfo_generated.example.json` 补齐本机配置后直接使用。
   21. 生成报告、JSON、CSV、Markdown、HTML、xlsx、zip 或其他交付文件后，必须做可打开性和编码校验，避免其他环境打开乱码或文件损坏；校验结果要写入结果目录或 `plan.md`。
@@ -522,8 +522,8 @@ recovery:
       - 当前 3021 台架进入烧录模式: 先 `uut-switch2.off` 断开协议口，再执行 `uut-switch1.off` → `uut-switch3.on` → `uut-switch1.on` → `uut-switch3.off`
       - 当前 3021 台架烧录后恢复运行态: `uut-switch2.off` → `uut-switch3.off` → `uut-switch1.off` → `uut-switch1.on` → 等待 3 秒 → `uut-switch2.on`
       - 自动化 `powerOnCmds` 中用 `sleep:3` 固化“等待 3 秒”步骤，不能把 `uut-switch1.on` 与 `uut-switch2.on` 连续紧贴下发
-      - `uut-switch2` 是协议口开关，不是 3021 boot 线；烧录进 boot 阶段不要操作 `uut-switch2`
-      - 历史 3122 台架可能使用 `uut-switch2` 作为 boot 线；未确认前不得把 3122 的 `uut-switch2` 逻辑套到 3021
+      - `uut-switch2` 是协议口门控，只允许在断电/上电/烧录前后执行 `off/on` 断开或恢复协议通信，绝不能当作 3021 boot 线
+      - `uut-switch3` 是 3021 唯一 boot 控制线；历史调试中使用其他 switch 或不带协议门控的序列均视为废弃逻辑，不得作为后续验证依据
       默认按单次连续会话下发完整序列，不拆成其他替代流程
       若 ROM 握手异常，先恢复正常上电基线，再按当前 `switch2.off + switch1/switch3` 烧录链路复现；
       若新打包固件异常，优先烧录 `assets/firmware/3021-smoke/3021_fan_ui_smoke_verified_20260612.zip` 做已知可用对照，

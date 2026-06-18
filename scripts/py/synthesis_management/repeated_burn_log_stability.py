@@ -294,7 +294,19 @@ def health_check(args: argparse.Namespace, round_dir: Path) -> Dict[str, Any]:
         cap = SerialCapture(port, args.log_baud, cap_path)
         cap.start()
         boot_caps[port] = cap
-    ctrl_ok = send_ctrl(args.ctrl_port, args.ctrl_baud, [f"{args.boot_switch}.off", "uut-switch1.off", "uut-switch1.on"], health_dir / "ctrl_power_cycle.log")
+    ctrl_ok = send_ctrl(
+        args.ctrl_port,
+        args.ctrl_baud,
+        [f"{args.protocol_switch}.off", f"{args.boot_switch}.off", f"{args.power_switch}.off", f"{args.power_switch}.on"],
+        health_dir / "ctrl_power_cycle.log",
+    )
+    time.sleep(3.0)
+    ctrl_ok = send_ctrl(
+        args.ctrl_port,
+        args.ctrl_baud,
+        [f"{args.protocol_switch}.on"],
+        health_dir / "ctrl_protocol_restore.log",
+    ) and ctrl_ok
     time.sleep(args.boot_capture_seconds / 2)
     if args.log_port in boot_caps:
         boot_caps[args.log_port].write(b"loglevel 4\r\n")
@@ -372,13 +384,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", default="")
     parser.add_argument("--ctrl-port", default="/dev/ttyACM4")
     parser.add_argument("--ctrl-baud", type=int, default=115200)
-    parser.add_argument("--burn-port", default="/dev/ttyACM1")
+    parser.add_argument("--burn-port", default="/dev/ttyACM0")
     parser.add_argument("--burn-baud", type=int, default=460800)
-    parser.add_argument("--log-port", default="/dev/ttyACM1")
+    parser.add_argument("--log-port", default="/dev/ttyACM0")
     parser.add_argument("--log-baud", type=int, default=115200)
     parser.add_argument("--protocol-port", default="/dev/ttyACM2")
     parser.add_argument("--protocol-baud", type=int, default=9600)
+    parser.add_argument("--power-switch", default="uut-switch1", help="Control switch used for target power; current 3021 bench uses uut-switch1")
     parser.add_argument("--boot-switch", default="uut-switch3", help="Control switch used for boot strap; current 3021 bench uses uut-switch3")
+    parser.add_argument("--protocol-switch", default="uut-switch2", help="Protocol gate switch; current 3021 bench must disconnect it before every power edge")
     parser.add_argument("--probe-frame", default="A5 FA 00 81 02 00 22 FB")
     parser.add_argument("--package-timeout-sec", type=int, default=1200)
     parser.add_argument("--boot-capture-seconds", type=float, default=16.0)
@@ -455,6 +469,10 @@ def main() -> int:
                 "8",
                 "--boot-switch",
                 args.boot_switch,
+                "--power-switch",
+                args.power_switch,
+                "--protocol-switch",
+                args.protocol_switch,
             ]
             burn_rc = run_cmd(burn_cmd, round_dir / "burn_command.log", timeout=420, env=env)
         health = health_check(args, round_dir) if package_rc == 0 and sdk_zip and not args.skip_burn else {}
