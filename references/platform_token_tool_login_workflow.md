@@ -124,6 +124,7 @@ node token-tool.js get --headless --chrome /usr/bin/google-chrome --timeout-ms 1
 ## 当前已验证现象
 
 - 2026-06-22：本机已按稳定目录 `artifacts/state/listenai-token-tool/` 完成桌面 Chrome 扫码；`get --headless --chrome /usr/bin/google-chrome` 复用 profile 获取 token 通过；写回 `TOOLS.md` 后 `/getLoginUser` 校验通过。
+- 2026-06-22：已修正 `listenai-token-tool.zip` 中 `localStorage.TOKEN` 为 JSON 字符串字面量时的误判；工具会先 normalize 去掉外层 JSON 引号，并把 `token 已被冻结/冻结` 识别为失效后自动走刷新链路。若看到 `tokens/listenai-token.txt` 带外层引号，不能直接写入 `TOOLS.md`。
 - 本机可通过 `DISPLAY=:0` 打开真实桌面 Chrome，不必只能用 headless 截图。
 - 仅截取 QR 图片容易过期；优先打开桌面 Chrome 让用户直接扫码。
 - 一轮扫码后若浏览器仍停在平台登录页，且 `localStorage` 没有 `TOKEN`，不能认为“扫码成功”。
