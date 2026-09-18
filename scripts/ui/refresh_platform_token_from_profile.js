@@ -13,7 +13,10 @@ const puppeteer = require('puppeteer-core');
 
 const BASE = 'https://integration-platform.listenai.com/ai-voice-firmwares';
 const API = `${BASE}/api/backend`;
-const DEFAULT_PROFILE = path.resolve('references/Profile 7');
+const DEFAULT_RETAIN_ROOT = path.join(os.homedir(), '.codex', 'browser-profiles', 'listenai-platform');
+const RETAINED_PROFILE = path.join(DEFAULT_RETAIN_ROOT, 'Profile 7');
+const SYSTEM_PROFILE = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data', 'Profile 7') : '';
+const DEFAULT_PROFILE = fs.existsSync(RETAINED_PROFILE) ? RETAINED_PROFILE : (SYSTEM_PROFILE && fs.existsSync(SYSTEM_PROFILE) ? SYSTEM_PROFILE : path.resolve('references/Profile 7'));
 const DEFAULT_CHROME = process.env.CHROME_BIN || '/usr/bin/google-chrome';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -23,6 +26,7 @@ function parseArgs(argv) {
     chrome: DEFAULT_CHROME,
     headed: false,
     inPlace: false,
+    retainRoot: DEFAULT_RETAIN_ROOT,
     timeoutMs: 180000,
     outDir: path.resolve('artifacts/tasks/platform-token-refresh-' + stamp()),
     persist: true,
@@ -33,11 +37,12 @@ function parseArgs(argv) {
     else if (a === '--chrome') args.chrome = argv[++i];
     else if (a === '--headed') args.headed = true;
     else if (a === '--in-place') args.inPlace = true;
+    else if (a === '--retain-root') args.retainRoot = path.resolve(argv[++i]);
     else if (a === '--timeout-ms') args.timeoutMs = Number(argv[++i]);
     else if (a === '--out-dir') args.outDir = path.resolve(argv[++i]);
     else if (a === '--no-persist') args.persist = false;
     else if (a === '--help') {
-      console.log('Usage: node scripts/ui/refresh_platform_token_from_profile.js [--profile-dir references/Profile\\ 7] [--headed] [--in-place] [--timeout-ms 180000] [--out-dir DIR] [--no-persist]');
+      console.log('Usage: node scripts/ui/refresh_platform_token_from_profile.js [--profile-dir references/Profile\\ 7] [--headed] [--in-place] [--retain-root DIR] [--timeout-ms 180000] [--out-dir DIR] [--no-persist]');
       process.exit(0);
     } else {
       throw new Error(`unknown arg: ${a}`);
@@ -59,19 +64,34 @@ function redact(value) {
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 
-function copyProfileToTemp(profileDir) {
+function copyProfileToRetainedRoot(profileDir, retainRoot) {
   const profileName = path.basename(profileDir);
-  const root = path.join(os.tmpdir(), `mars-belt-platform-profile-${Date.now()}`);
+  const root = path.resolve(retainRoot);
   ensureDir(root);
-  child.execFileSync('cp', ['-a', profileDir, path.join(root, profileName)]);
+  const target = path.join(root, profileName);
+  const existed = fs.existsSync(target);
+  if (!existed) fs.cpSync(profileDir, target, { recursive: true, force: true });
+  // Chrome needs the user-data root's Local State to decrypt cookies and
+  // storage copied from a Windows profile. Keep the source profile read-only.
+  const sourceLocalState = path.join(path.dirname(profileDir), 'Local State');
+  const targetLocalState = path.join(root, 'Local State');
+  if (fs.existsSync(sourceLocalState) && !fs.existsSync(targetLocalState)) {
+    fs.copyFileSync(sourceLocalState, targetLocalState);
+  }
   deleteLocks(root);
-  return { userDataDir: root, profileName, copied: true };
+  return { userDataDir: root, profileName, copied: !existed, retained: true };
 }
 
 function deleteLocks(root) {
-  for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'LOCK']) {
-    try { child.execFileSync('find', [root, '-name', name, '-delete']); } catch (_) {}
-  }
+  const names = new Set(['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'LOCK']);
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (names.has(entry.name)) { try { fs.rmSync(full, { force: true }); } catch (_) {} }
+    }
+  };
+  try { walk(root); } catch (_) {}
 }
 
 function resolveProfile(args) {
@@ -80,7 +100,7 @@ function resolveProfile(args) {
   if (args.inPlace) {
     return { userDataDir: path.dirname(profileDir), profileName: path.basename(profileDir), copied: false };
   }
-  return copyProfileToTemp(profileDir);
+  return copyProfileToRetainedRoot(profileDir, args.retainRoot);
 }
 
 function readTools() {
@@ -200,7 +220,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   ensureDir(args.outDir);
   const profile = resolveProfile(args);
-  const steps = [{ step: 'profile_resolved', profileName: profile.profileName, copied: profile.copied, inPlace: args.inPlace }];
+  const steps = [{ step: 'profile_resolved', profileName: profile.profileName, copied: profile.copied, retained: Boolean(profile.retained), userDataDir: profile.userDataDir, inPlace: args.inPlace }];
   const browser = await puppeteer.launch({
     executablePath: args.chrome,
     headless: args.headed ? false : true,
@@ -247,6 +267,8 @@ async function main() {
       validate,
       outDir: args.outDir,
       copiedProfile: profile.copied,
+      retainedProfile: Boolean(profile.retained),
+      profileRoot: profile.userDataDir,
       needQrScan: fs.existsSync(path.join(args.outDir, 'wecom_qr.png')) && !validate.ok,
       qrPath: fs.existsSync(path.join(args.outDir, 'wecom_qr.png')) ? path.join(args.outDir, 'wecom_qr.png') : '',
       steps,
@@ -266,6 +288,8 @@ async function main() {
       qrPath: result.qrPath,
       outDir: result.outDir,
       copiedProfile: result.copiedProfile,
+      retainedProfile: result.retainedProfile,
+      profileRoot: result.profileRoot,
     }, null, 2));
     process.exit(validate.ok ? 0 : 2);
   } finally {

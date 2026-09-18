@@ -60,6 +60,7 @@ system: |
   31. token 失效处理优先使用 `references/listenai-token-tool.zip` 的持久 profile 方案：每台 PC 首次使用都必须在本机桌面扫码一次，推荐解压到稳定目录 `artifacts/state/listenai-token-tool/`，生成本机 `profiles/listenai` 和 `tokens/listenai-token.txt`；后续先跑 `node token-tool.js get --headless --chrome <browser>` 复用 profile。只有 token 文件生成且 `/getLoginUser` 校验通过，才写回 `TOOLS.md`；若 `TOKEN` 带外层 JSON 引号或接口提示 token 冻结，必须 normalize 并触发刷新，不能把带引号/冻结 token 写回。当前本机没有 Google Chrome 时，先探测 `chromium/chromium-browser` 并用 `--chrome` 或 `CHROME_PATH` 指定；仍无浏览器时安装系统 Chrome/Chromium，或允许 Puppeteer 下载浏览器但首次扫码仍必须有桌面/VNC/X11。详细流程见 `references/platform_token_tool_login_workflow.md`。Profile、tokens、截图、cookie 和 `TOOLS.md` 禁止同步 git。
   32. 控制 token 消耗：`plan.md` 只保留当前状态，历史超过约 200KB 归档到 `artifacts/plan_archive/`；长日志、Chrome 完整进程、报告全文和大型 JSON 默认写文件不贴回复；搜索时排除 `artifacts/`、`scripts/artifacts/`、`node_modules/`、Chrome profile。详细规则见 `references/execution_context_hygiene.md`。
   33. `artifacts/` 只作为本机历史证据库，不同步 git，也不作为跨 PC 运行依赖。历史任务中可复用的经验必须沉淀为轻量文档、脚本或资产：任务族索引见 `references/artifacts_knowledge_index.md`，故障定位和复测矩阵见 `references/known_issue_diagnosis_matrix.md`。遇到相似问题时先读矩阵执行最短闭环，只有需要追溯本机原始日志/截图/下载包时才回看 `artifacts/`。
+  34. 深定制算法打包必须先阅读 `references/deep_custom_package_validation_playbook.md`：固定一个产品、同产品多 release、实时扫描 UI 能力、先做未提交 smoke，再按唤醒/命令词开关和门限生成矩阵；每个成功 ZIP 必须检查 `web_config.json` 与四个 stage1 词表。平台构建拒绝、UI 控件缺失、自动化缺陷和真实 FAIL 必须分开统计，不得把配置中草稿当固件失败；当前深定制的 `mainE2E` 主唤醒索引约束和自定义词控件缺失只能作为历史证据，不能硬编码成新版本结论。
 
 ---
 

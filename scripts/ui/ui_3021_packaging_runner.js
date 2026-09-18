@@ -8,8 +8,12 @@ const BASE = 'https://integration-platform.listenai.com/ai-voice-firmwares';
 const API = BASE + '/api/backend';
 dns.setServers((process.env.LISTENAI_DNS_SERVERS || '8.8.8.8,114.114.114.114').split(',').map(s => s.trim()).filter(Boolean));
 
+function redactSensitive(value) {
+  return String(value || '').replace(/[A-Za-z0-9_-]{20,}/g, '***REDACTED***');
+}
+
 function parseArgs(argv) {
-  const args = { plan: '', outDir: '', limit: 0, offset: 0, headless: 'new', chrome: '/usr/bin/google-chrome', createMode: 'ui-strict', pollSeconds: 900, submitOnly: false, stopAfterProduct: false };
+  const args = { plan: '', outDir: '', limit: 0, offset: 0, headless: 'new', chrome: '/usr/bin/google-chrome', createMode: 'ui-strict', pollSeconds: 900, submitOnly: false, stopAfterProduct: false, stopBeforeGenerate: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], n = argv[i + 1];
     if (k === '--plan') args.plan = n, i++;
@@ -22,13 +26,36 @@ function parseArgs(argv) {
     else if (k === '--poll-seconds') args.pollSeconds = Number(n), i++;
     else if (k === '--submit-only') args.submitOnly = true;
     else if (k === '--stop-after-product') args.stopAfterProduct = true;
+    else if (k === '--stop-before-generate') args.stopBeforeGenerate = true;
+    else if (k === '--help' || k === '-h') args.help = true;
+    else throw new Error(`unknown argument: ${k}`);
   }
+  if (args.help) return args;
   if (!args.plan) throw new Error('missing --plan');
   if (!args.outDir) args.outDir = path.join(path.dirname(args.plan), 'ui-run');
   if (args.createMode !== 'ui-strict' && process.env.LISTENAI_ALLOW_LEGACY_API_PACKAGING !== '1') {
     throw new Error(`create-mode=${args.createMode} is disabled. Firmware packaging must be UI-only; set LISTENAI_ALLOW_LEGACY_API_PACKAGING=1 only for explicitly requested legacy API probes.`);
   }
   return args;
+}
+
+function printHelp() {
+  console.log([
+    'Usage: node scripts/ui/ui_3021_packaging_runner.js --plan <json> [options]',
+    '',
+    'Options:',
+    '  --out-dir <dir>           结果目录',
+    '  --offset <n>              从第 n 个 job 开始',
+    '  --limit <n>               最多执行 n 个 job',
+    '  --chrome <path>           Chrome 可执行文件',
+    '  --headful                 使用可见浏览器',
+    '  --poll-seconds <n>        release 轮询超时',
+    '  --submit-only             提交后不轮询',
+    '  --stop-after-product      产品确认后停止',
+    '  --stop-before-generate    完成 UI 配置但不提交 release',
+    '',
+    '固件打包严格使用 UI；不会执行烧录或设备操作。',
+  ].join('\n'));
 }
 
 function readToken() {
@@ -47,7 +74,7 @@ async function withRetry(fn, label, attempts = 4) {
       await sleep(800 * (i + 1));
     }
   }
-  throw new Error(`${label} failed after ${attempts} attempts: ${last?.message || last}`);
+  throw new Error(`${label} failed after ${attempts} attempts: ${redactSensitive(last?.message || last)}`);
 }
 
 async function apiGet(ep, token, params = {}) {
@@ -104,6 +131,183 @@ async function dumpState(page, dir, name, extra = {}) {
   }, extra);
   fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(state, null, 2));
   return state;
+}
+
+function updateSubmissionLedger(job, state) {
+  if (!job.submissionKey || !job.submissionLedger) return null;
+  const ledgerPath = path.resolve(job.submissionLedger);
+  fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+  let ledger = { schemaVersion: 1, submissions: {} };
+  if (fs.existsSync(ledgerPath)) ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+  ledger.submissions ||= {};
+  const existing = ledger.submissions[job.submissionKey];
+  if (state.status === 'attempting' && existing) {
+    throw new Error(`submission key already claimed: ${job.submissionKey}; status=${existing.status}`);
+  }
+  ledger.submissions[job.submissionKey] = { ...(existing || {}), ...state, productId: String(job.expectedProductId || ''), caseId: job.caseId || '', updatedAt: new Date().toISOString() };
+  const temporary = `${ledgerPath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8');
+  fs.renameSync(temporary, ledgerPath);
+  return { ledgerPath, key: job.submissionKey, status: state.status };
+}
+
+async function captureVisibleInventory(page, dir, name, extra = {}) {
+  const inventory = await page.evaluate(extra => {
+    const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const visible = el => {
+      if (!el || !(el instanceof Element)) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      for (let node = el; node && node instanceof Element; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        if (node.getAttribute('aria-hidden') === 'true' || node.hidden) return false;
+      }
+      return true;
+    };
+    const interactive = el => {
+      if (!visible(el)) return false;
+      if (el.matches('input[type="hidden"]')) return false;
+      const role = el.getAttribute('role') || '';
+      const tagInteractive = el.matches('button,a[href],input,textarea,select');
+      const roleInteractive = /^(button|switch|tab|checkbox|radio|combobox|slider|spinbutton|option)$/.test(role);
+      const classInteractive = el.matches('.ant-select-selector,.ant-segmented-item,.ant-tabs-tab,.ant-radio-wrapper,.ant-checkbox-wrapper,.ant-switch');
+      return tagInteractive || roleInteractive || classInteractive;
+    };
+    const disabled = el => Boolean(
+      el.disabled || el.getAttribute('aria-disabled') === 'true' ||
+      el.closest('[disabled],.ant-btn-disabled,.ant-select-disabled,.ant-input-disabled,.ant-checkbox-wrapper-disabled,.ant-radio-wrapper-disabled')
+    );
+    const visibleModals = [...document.querySelectorAll('.ant-modal')].filter(visible);
+    const topModal = visibleModals.at(-1) || null;
+    const visibleTables = [...document.querySelectorAll('table')].filter(visible);
+    const algorithmTable = visibleTables.find(table => /语义\s*\(最小功能词\)/.test(table.innerText || '') && /功能类型/.test(table.innerText || ''));
+    const depthTable = visibleTables.find(table => /DEC/.test(table.innerText || '') && /E2E/.test(table.innerText || ''));
+    const completionMarker = [...document.querySelectorAll('body *')].filter(visible).find(el => /操作成功/.test(el.innerText || '') && (el.innerText || '').length < 120);
+    const anchor = algorithmTable || depthTable || completionMarker;
+    let activeRoot = anchor?.closest('.ant-card-body') || anchor?.closest('.ant-card') || anchor?.parentElement || document.body;
+    if (algorithmTable) {
+      for (let node = algorithmTable.parentElement; node && node !== document.body; node = node.parentElement) {
+        const text = norm(node.innerText);
+        if (text.includes('语音注册') && text.includes('多唤醒')) { activeRoot = node; break; }
+      }
+    }
+    const inActiveScope = el => topModal ? topModal.contains(el) : Boolean(activeRoot.contains(el) || el.closest('.ant-steps'));
+    const closestText = (el, selector) => norm(el.closest(selector)?.innerText);
+    const sectionOf = el => {
+      if (el.closest('.ant-modal')) return '内置词条推荐';
+      const block = el.closest('.ant-form-item,.ant-card,section,[class*="container"],table') || el.parentElement;
+      const text = norm(block?.innerText).slice(0, 400);
+      if (/语音注册|自学习/.test(text) || el.id.includes('Learn') || /wakeupRepeat|commandRepeat|Regist/.test(el.id)) return '语音注册';
+      if (/多唤醒|切换唤醒词|查询协议|确认协议/.test(text) || el.id.includes('wkelist_') || el.id.includes('common_')) return '多唤醒';
+      if (depthTable && (depthTable.contains(el) || /唤醒等待状态|唤醒后命令词/.test(text))) return '深度调优';
+      if (algorithmTable || /算法配置|基础算法配置|语义\(最小功能词\)/.test(document.body.innerText)) return '算法配置';
+      if (/操作成功|生成SDK包/.test(document.body.innerText)) return '完成';
+      return '页面';
+    };
+    const tableContext = el => {
+      const cell = el.closest('td,th');
+      const row = el.closest('tr');
+      const table = el.closest('table');
+      if (!row || !table) return { repeated: false, rowIndex: null, column: '' };
+      const rows = [...table.querySelectorAll('tbody tr')].filter(visible);
+      const rowIndex = rows.indexOf(row);
+      const cells = [...row.children];
+      const cellIndex = cell ? cells.indexOf(cell) : -1;
+      const headers = [...table.querySelectorAll('thead th')].map(th => norm(th.innerText));
+      return { repeated: rowIndex >= 0, rowIndex: rowIndex >= 0 ? rowIndex : null, column: headers[cellIndex] || '' };
+    };
+    const labelOf = (el, table) => {
+      const idLabel = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+      const formLabel = el.closest('.ant-form-item')?.querySelector('label');
+      const aria = el.getAttribute('aria-label') || el.getAttribute('title');
+      const placeholder = el.getAttribute('placeholder');
+      const selfText = norm(el.innerText || el.value);
+      return norm(idLabel?.innerText || formLabel?.innerText || aria || placeholder || table.column || selfText).slice(0, 160);
+    };
+    const kindOf = el => {
+      if (el.matches('button,[role="button"],a[href]')) return 'button';
+      if (el.matches('[role="switch"],.ant-switch')) return 'switch';
+      if (el.matches('[role="tab"],.ant-tabs-tab')) return 'tab';
+      if (el.matches('input[type="checkbox"],[role="checkbox"],.ant-checkbox-wrapper')) return 'checkbox';
+      if (el.matches('input[type="radio"],[role="radio"],.ant-radio-wrapper')) return 'radio';
+      if (el.matches('select,[role="combobox"],.ant-select-selector')) return 'select';
+      if (el.matches('textarea')) return 'textarea';
+      if (el.matches('input[type="number"],[role="spinbutton"]')) return 'number';
+      if (el.matches('input')) return 'input';
+      return 'control';
+    };
+    const familyOf = (el, kind, label, table, section) => {
+      const rawId = String(el.id || el.querySelector('[id]')?.id || '')
+        .replace(/form_item_\d+_/g, 'form_item_[]_')
+        .replace(/wkelist_\d+_/g, 'wkelist_[]_')
+        .replace(/_(\d+)_condition/g, '_[]_condition');
+      if (rawId) return `${section}:${rawId}`;
+      const stableLabel = norm(label).replace(/\d+/g, '[]').slice(0, 80);
+      return `${section}:${table.column || stableLabel || kind}:${kind}`;
+    };
+    const candidates = [...document.querySelectorAll('button,a[href],input,textarea,select,[role="button"],[role="switch"],[role="tab"],[role="checkbox"],[role="radio"],[role="combobox"],[role="slider"],[role="spinbutton"],.ant-select-selector,.ant-segmented-item,.ant-tabs-tab,.ant-radio-wrapper,.ant-checkbox-wrapper,.ant-switch')]
+      .filter(el => inActiveScope(el) && interactive(el));
+    const seenElements = new Set();
+    const controls = [];
+    for (const el of candidates) {
+      const primary = el.matches('input,textarea,select,button,a[href]') ? el : (el.querySelector('input,textarea,select,button,a[href]') || el);
+      if (seenElements.has(primary)) continue;
+      seenElements.add(primary);
+      const table = tableContext(primary);
+      const kind = kindOf(primary);
+      const label = labelOf(primary, table);
+      const section = sectionOf(primary);
+      const text = norm(primary.innerText || primary.value || label).slice(0, 180);
+      const compactText = text.replace(/\s/g, '');
+      const navigation = !table.repeated && (
+        /^(上一步|继续|关闭|生成并关闭|详情|查看|复制|下载|删除)$/.test(compactText) ||
+        /^(产品定义|快速创建|算法配置|深度调优|完成|发布版本|下载固件)/.test(compactText)
+      );
+      const rect = primary.getBoundingClientRect();
+      controls.push({
+        key: familyOf(primary, kind, label, table, section), section, kind, label, text,
+        id: primary.id || '', role: primary.getAttribute('role') || '',
+        enabled: !disabled(primary), checked: primary.checked ?? primary.getAttribute('aria-checked') ?? null,
+        selected: primary.getAttribute('aria-selected'), value: 'value' in primary ? String(primary.value || '').slice(0, 300) : '',
+        navigation, repeated: table.repeated, rowIndex: table.rowIndex, column: table.column,
+        box: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+      });
+    }
+    const parameterControls = controls.filter(control => !control.navigation);
+    const familyKeys = [...new Set(parameterControls.map(control => control.key))];
+    const repeated = parameterControls.filter(control => control.repeated);
+    const sections = {};
+    for (const control of controls) {
+      sections[control.section] ||= { clickableInstances: 0, enabledInstances: 0, parameterFamilies: new Set(), repeatedInstances: 0, navigationInstances: 0 };
+      const summary = sections[control.section];
+      summary.clickableInstances += 1;
+      if (control.enabled) summary.enabledInstances += 1;
+      if (control.navigation) summary.navigationInstances += 1;
+      else summary.parameterFamilies.add(control.key);
+      if (control.repeated) summary.repeatedInstances += 1;
+    }
+    for (const summary of Object.values(sections)) {
+      summary.parameterFamilyCount = summary.parameterFamilies.size;
+      summary.parameterFamilies = [...summary.parameterFamilies].sort();
+    }
+    return {
+      schemaVersion: 1, capturedAt: new Date().toISOString(), url: location.href,
+      title: document.title, extra,
+      summary: {
+        parameterFamilyCount: familyKeys.length,
+        clickableInstanceCount: controls.length,
+        enabledInstanceCount: controls.filter(control => control.enabled).length,
+        repeatedInstanceCount: repeated.length,
+        repeatedRowCount: new Set(repeated.map(control => `${control.section}:${control.rowIndex}`)).size,
+        navigationCount: controls.filter(control => control.navigation).length,
+        sections,
+      },
+      controls,
+    };
+  }, extra);
+  fs.writeFileSync(path.join(dir, `${name}-visible-controls.json`), JSON.stringify(inventory, null, 2));
+  return inventory;
 }
 
 
@@ -222,6 +426,7 @@ async function clickText(page, text, preferredTag = null, timeout = 30000) {
     let el = candidates[0]?.el;
     if (!el) return null;
     el = el.closest('button,a') || el;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
     const r = el.getBoundingClientRect();
     return { tag: el.tagName, text: el.innerText.slice(0, 80), x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }, { text, preferredTag });
@@ -673,10 +878,16 @@ async function findProductApi(token, productName) {
   return records.find(r => r.name === productName) || null;
 }
 
+async function findDeepProductApi(token, productName) {
+  const data = await apiGet('/biz/prod/page', token, { current: 1, size: 20, name: productName, type: '语言模型打包', subType: '语言模型打包' });
+  const records = data.records || [];
+  return records.find(r => r.name === productName) || null;
+}
+
 async function createProductUi(page, job) {
-  if (await searchProductList(page, job.productName)) return { existed: true };
+  if (await searchProductList(page, job.productName, Boolean(job.deepSearchVersion))) return { existed: true };
   const p = job.product;
-  await page.goto(BASE + '/firmware', { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto(BASE + (job.deepSearchVersion ? '/algorithm/basic' : '/firmware'), { waitUntil: 'networkidle2', timeout: 60000 });
   await clickText(page, '新增', 'BUTTON');
   await page.waitForFunction(() => {
     const visible = el => {
@@ -686,6 +897,41 @@ async function createProductUi(page, job) {
     };
     return [...document.querySelectorAll('.ant-modal')].some(m => visible(m) && m.innerText.includes('新建产品') && m.querySelector('#form_item_language'));
   }, { timeout: 30000 });
+  if (job.deepSearchVersion) {
+    await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(x => x.innerText.trim() === '深定制搜索')?.click());
+    const panel = await page.$('[role=tabpanel]:not([aria-hidden="true"])');
+    if (!panel) throw new Error('deep customization search panel not found');
+    const search = await panel.$('input[placeholder="请输入搜索关键字"]');
+    if (!search) throw new Error('deep customization version search input not found');
+    await search.type(String(job.deepSearchVersion), { delay: 5 });
+    await panel.$('button.ant-input-search-button').then(button => button.click());
+    await page.waitForSelector('.ant-modal .container', { visible: true, timeout: 30000 });
+    const selected = await page.evaluate(() => {
+      const modal = [...document.querySelectorAll('.ant-modal')].find(m => m.getBoundingClientRect().width > 0);
+      const card = modal && [...modal.querySelectorAll('.container')].find(x => x.getBoundingClientRect().width > 0);
+      if (!card) return false;
+      card.click();
+      return true;
+    });
+    if (!selected) throw new Error('deep customization search returned no selectable result');
+    await sleep(800);
+    await fillInputInLatestModal(page, '#form_item_name', p.name || job.productName);
+    await selectProductCreateOption(page, '#rc_select_6', p.topCategory || '小家电');
+    await selectProductCreateOption(page, '#form_item_type', p.productLabel || '风扇');
+    await closeFloatingDropdowns(page);
+    const saved = await page.evaluate(() => {
+      const modals = [...document.querySelectorAll('.ant-modal')].filter(m => m.getBoundingClientRect().width > 0);
+      const modal = modals[modals.length - 1];
+      const primary = modal && [...modal.querySelectorAll('button')].filter(b => b.className.includes('ant-btn-primary'));
+      const btn = primary && primary[primary.length - 1];
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (!saved) throw new Error('deep customization save product button missing');
+    await sleep(2500);
+    return { existed: false, deepSearch: true };
+  }
   await fillInputInLatestModal(page, '#form_item_name', job.productName);
   await selectProductCreateOption(page, '#form_item_language', p.language);
   // The category select id is generated by Ant Design and can shift after UI updates.
@@ -785,8 +1031,8 @@ async function createProductUi(page, job) {
   return { existed: false };
 }
 
-async function searchProductList(page, productName) {
-  await page.goto(BASE + '/firmware', { waitUntil: 'networkidle2', timeout: 60000 });
+async function searchProductList(page, productName, deepCustomization = false) {
+  await page.goto(BASE + (deepCustomization ? '/algorithm/basic' : '/firmware'), { waitUntil: 'networkidle2', timeout: 60000 });
   await sleep(1000);
   if (await page.evaluate(name => document.body.innerText.includes(name), productName)) return true;
   const inputHandle = await page.evaluateHandle(() => {
@@ -805,8 +1051,8 @@ async function searchProductList(page, productName) {
   return await page.evaluate(name => document.body.innerText.includes(name), productName);
 }
 
-async function openProductDetail(page, productName) {
-  const found = await searchProductList(page, productName);
+async function openProductDetail(page, productName, deepCustomization = false) {
+  const found = await searchProductList(page, productName, deepCustomization);
   if (!found) throw new Error(`product row not found in UI list: ${productName}`);
   const ok = await page.evaluate(name => {
     const row = [...document.querySelectorAll('tbody tr')].find(r => r.innerText.includes(name));
@@ -880,6 +1126,495 @@ async function importAlgoTemplate(page, dir, templatePath) {
     }).catch(() => {});
     await sleep(1000);
   }
+}
+
+async function setRecommendationSearch(page, value) {
+  const search = await page.evaluateHandle(() => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    return modal ? [...modal.querySelectorAll('input[placeholder="请输入搜索关键字"]')].find(visible) || null : null;
+  }).then(handle => handle.asElement());
+  if (!search) throw new Error('builtin recommendation search input not found');
+  await search.click({ clickCount: 3 });
+  await page.keyboard.down('Control');
+  await page.keyboard.press('A');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+  if (value) {
+    await search.type(String(value), { delay: 10 });
+    await page.keyboard.press('Enter').catch(() => {});
+  }
+  await sleep(900);
+  return search;
+}
+
+async function readRecommendationModalState(page) {
+  return page.evaluate(() => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return null;
+    const text = norm(modal.innerText);
+    const available = text.match(/(\d+)\s*项\s*可选意图/);
+    const selected = text.match(/(\d+)\s*项\s*已选意图/);
+    const modalRect = modal.getBoundingClientRect();
+    const checked = [...modal.querySelectorAll('input[type="checkbox"]')].filter(visible).filter(input => input.checked || input.closest('.ant-checkbox-checked')).map(input => {
+      const row = input.closest('label,.ant-checkbox-wrapper,li,.ant-tree-treenode,div');
+      return norm(row?.innerText);
+    }).filter(Boolean);
+    const rightSideLabels = [...modal.querySelectorAll('label,.ant-checkbox-wrapper,.ant-tree-node-content-wrapper,[class*="item"]')].filter(visible).filter(el => el.getBoundingClientRect().left > modalRect.left + modalRect.width / 2).map(el => norm(el.innerText)).filter(value => value && value.length < 80);
+    return {
+      availableCount: available ? Number(available[1]) : null,
+      selectedCount: selected ? Number(selected[1]) : null,
+      checked: [...new Set(checked)],
+      selectedLabels: [...new Set(rightSideLabels)],
+      searchValue: modal.querySelector('input[placeholder="请输入搜索关键字"]')?.value || '',
+      buttons: [...modal.querySelectorAll('button')].filter(visible).map(button => norm(button.innerText)).filter(Boolean),
+    };
+  });
+}
+
+async function selectRecommendationWord(page, word) {
+  await setRecommendationSearch(page, word);
+  const expanded = await page.evaluate(() => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return 0;
+    const mr = modal.getBoundingClientRect();
+    const switchers = [...modal.querySelectorAll('.ant-tree-switcher_close')]
+      .filter(visible)
+      .filter(el => el.getBoundingClientRect().left < mr.left + mr.width / 2);
+    switchers.forEach(el => el.click());
+    return switchers.length;
+  });
+  if (expanded) await sleep(350);
+  const location = await page.evaluate(target => {
+    const visible = el => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+    };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return null;
+    const modalRect = modal.getBoundingClientRect();
+    const norm = value => String(value || '').replace(/\s/g, '');
+    const wanted = norm(target);
+    const nodes = [...modal.querySelectorAll('label,.ant-checkbox-wrapper,.ant-tree-node-content-wrapper,span,div')]
+      .filter(visible).filter(el => norm(el.innerText) === wanted)
+      .sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+    const rightNode = nodes.find(el => el.getBoundingClientRect().left > modalRect.left + modalRect.width / 2);
+    const node = nodes.find(el => el.getBoundingClientRect().left < modalRect.left + modalRect.width / 2);
+    if (!node && rightNode) return { alreadySelected: true };
+    return { alreadySelected: false, leftFound: Boolean(node), rightFound: Boolean(rightNode) };
+  }, word);
+  if (!location) throw new Error(`builtin recommendation modal not available: ${word}`);
+  if (location.alreadySelected) return location;
+  if (!location.leftFound) throw new Error(`builtin recommendation not found: ${word}`);
+  const handle = await page.evaluateHandle(target => {
+    const visible = el => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+    };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return null;
+    const modalRect = modal.getBoundingClientRect();
+    const norm = value => String(value || '').replace(/\s/g, '');
+    const node = [...modal.querySelectorAll('label,.ant-checkbox-wrapper,.ant-tree-node-content-wrapper,span,div')]
+      .filter(visible)
+      .filter(el => el.getBoundingClientRect().left < modalRect.left + modalRect.width / 2 && norm(el.innerText) === norm(target))
+      .sort((a, b) => (a.innerText || '').length - (b.innerText || '').length)[0];
+    return node?.closest('label,.ant-checkbox-wrapper') || node || null;
+  }, word);
+  const element = handle.asElement();
+  if (!element) throw new Error(`builtin recommendation element handle not found: ${word}`);
+  const alreadySelected = await element.evaluate(el => Boolean(el.querySelector('input[type="checkbox"]')?.checked || el.classList.contains('ant-checkbox-wrapper-checked')));
+  if (!alreadySelected) await element.click({ delay: 30 });
+  await sleep(350);
+  return { alreadySelected };
+}
+
+async function clickRecommendationButton(page, text, optional = false) {
+  const point = await page.evaluate(text => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const norm = value => String(value || '').replace(/\s/g, '');
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    const button = modal && [...modal.querySelectorAll('button')].filter(visible).find(el => norm(el.innerText) === norm(text));
+    if (!button) return null;
+    const r = button.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, disabled: Boolean(button.disabled || button.getAttribute('aria-disabled') === 'true') };
+  }, text);
+  if (!point || point.disabled) {
+    if (optional) return false;
+    throw new Error(`builtin recommendation button unavailable: ${text}`);
+  }
+  await page.mouse.click(point.x, point.y);
+  await sleep(700);
+  return true;
+}
+
+async function removeSelectedRecommendations(page, words) {
+  const removed = [];
+  await setRecommendationSearch(page, '');
+  await page.evaluate(() => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return;
+    const mr = modal.getBoundingClientRect();
+    const rightSwitchers = [...modal.querySelectorAll('.ant-tree-switcher')]
+      .filter(visible)
+      .filter(el => el.getBoundingClientRect().left > mr.left + mr.width / 2)
+      .filter(el => !el.classList.contains('ant-tree-switcher-noop') && !el.classList.contains('ant-tree-switcher_open'));
+    rightSwitchers.forEach(el => el.click());
+  });
+  await sleep(500);
+  for (const word of words || []) {
+    const before = await readRecommendationModalState(page);
+    const target = await page.evaluate(word => {
+      const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+      const norm = value => String(value || '').replace(/\s/g, '');
+      const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+      if (!modal) return null;
+      const mr = modal.getBoundingClientRect();
+      const node = [...modal.querySelectorAll('label,.ant-checkbox-wrapper,.ant-tree-node-content-wrapper,span,div')]
+        .filter(visible).filter(el => el.getBoundingClientRect().left > mr.left + mr.width / 2 && norm(el.innerText) === norm(word))
+        .sort((a, b) => (a.innerText || '').length - (b.innerText || '').length)[0];
+      if (!node) return null;
+      const nodeRect = node.getBoundingClientRect();
+      const trash = [...modal.querySelectorAll('button,[role=button],.anticon-delete,.anticon-close,svg')]
+        .filter(visible)
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          const centerY = r.top + r.height / 2;
+          return r.left > mr.left + mr.width / 2 && Math.abs(centerY - (nodeRect.top + nodeRect.height / 2)) < Math.max(18, nodeRect.height);
+        })
+        .sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0];
+      const hit = trash || node;
+      const rect = hit.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, directDelete: Boolean(trash) };
+    }, word);
+    if (!target) continue;
+    await page.mouse.click(target.x, target.y);
+    await sleep(500);
+    if (!target.directDelete) {
+      const clicked = await clickRecommendationButton(page, '移除', true) || await clickRecommendationButton(page, '删除', true);
+      if (!clicked) throw new Error(`builtin recommendation remove action unavailable: ${word}`);
+    }
+    const after = await readRecommendationModalState(page);
+    if (Number.isFinite(before?.selectedCount) && Number.isFinite(after?.selectedCount) && after.selectedCount >= before.selectedCount) {
+      throw new Error(`builtin recommendation selected count did not decrease: ${word}`);
+    }
+    removed.push(word);
+  }
+  return removed;
+}
+
+async function addBuiltinRecommendations(page, job) {
+  const words = (job.builtinRecommendations || ['小西小西', '打开风扇', '关闭风扇']).filter(Boolean);
+  if (!words.length) throw new Error('builtinRecommendations is empty');
+  await clickText(page, '\u5185\u7f6e\u8bcd\u6761\u63a8\u8350', 'BUTTON', 10000);
+  await page.waitForSelector('.ant-modal', { visible: true, timeout: 15000 });
+  const validation = job.builtinRecommendationValidation || {};
+  const evidence = { initial: await readRecommendationModalState(page), fuzzySearch: null, beforeSave: null, reopened: null, removed: [] };
+  if (validation.fuzzySearch) {
+    await setRecommendationSearch(page, validation.fuzzySearch);
+    evidence.fuzzySearch = await readRecommendationModalState(page);
+    await setRecommendationSearch(page, '');
+  }
+  if (validation.probeEmptySelection) evidence.emptySelection = await readRecommendationModalState(page);
+  if (job.builtinRecommendationMode === 'all') {
+    await clickRecommendationButton(page, '一键添加');
+    await sleep(1000);
+  } else {
+    for (const word of words) await selectRecommendationWord(page, word);
+    await clickRecommendationButton(page, '添加');
+    if (validation.repeatWords?.length) {
+      let newSelections = 0;
+      let alreadySelected = 0;
+      for (const word of validation.repeatWords) {
+        try {
+          const repeat = await selectRecommendationWord(page, word);
+          if (repeat.alreadySelected) alreadySelected += 1;
+          else newSelections += 1;
+        } catch (error) {
+          if (/not found/.test(String(error.message || error))) alreadySelected += 1;
+          else throw error;
+        }
+      }
+      evidence.repeatAdd = { requested: validation.repeatWords, alreadySelected, newSelections };
+      if (newSelections) await clickRecommendationButton(page, '添加', true);
+    }
+  }
+  if (validation.removeWords?.length) evidence.removed = await removeSelectedRecommendations(page, validation.removeWords);
+  evidence.beforeSave = await readRecommendationModalState(page);
+  await clickRecommendationButton(page, '保存');
+  await sleep(2500);
+  if (validation.verifyReopen) {
+    await clickText(page, '内置词条推荐', 'BUTTON', 10000);
+    await page.waitForSelector('.ant-modal', { visible: true, timeout: 15000 });
+    evidence.reopened = await readRecommendationModalState(page);
+    await closeTopVisibleModal(page);
+  }
+  return evidence;
+}
+
+async function assertCustomWordsAreNotBuiltin(page, words) {
+  const evidence = [];
+  await clickText(page, '内置词条推荐', 'BUTTON', 10000);
+  await page.waitForSelector('.ant-modal', { visible: true, timeout: 15000 });
+  try {
+    for (const word of words) {
+      await setRecommendationSearch(page, word);
+      const match = await page.evaluate(word => {
+        const visible = el => {
+          const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+          return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+        };
+        const norm = value => String(value || '').replace(/\s/g, '');
+        const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+        if (!modal) return { modal: false, exactLeft: false, exactRight: false };
+        const middle = modal.getBoundingClientRect().left + modal.getBoundingClientRect().width / 2;
+        const nodes = [...modal.querySelectorAll('label,.ant-checkbox-wrapper,.ant-tree-node-content-wrapper,span,div')]
+          .filter(visible).filter(el => norm(el.innerText) === norm(word));
+        return {
+          modal: true,
+          exactLeft: nodes.some(el => el.getBoundingClientRect().left < middle),
+          exactRight: nodes.some(el => el.getBoundingClientRect().left >= middle),
+        };
+      }, word);
+      evidence.push({ word, ...match });
+      if (match.exactLeft || match.exactRight) throw new Error(`custom algorithm word exists in builtin recommendations: ${word}`);
+    }
+  } finally {
+    await closeTopVisibleModal(page).catch(() => {});
+  }
+  return evidence;
+}
+
+async function addCustomAlgorithmWords(page, definitions) {
+  const requested = definitions || [];
+  if (!requested.length) return [];
+  const texts = requested.flatMap(item => [item.word, ...(item.extWords || []), item.extWord]).filter(Boolean);
+  const builtinAbsence = await assertCustomWordsAreNotBuiltin(page, texts);
+  const evidence = [];
+  for (const definition of requested) {
+    const beforeCount = await page.$$eval('input[id$="_word"]', inputs => inputs.length);
+    const clicked = await page.evaluate(() => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const norm = value => String(value || '').replace(/\s/g, '');
+      const label = [...document.querySelectorAll('div,span')].filter(visible)
+        .find(el => {
+          const text = norm(el.innerText);
+          return text.includes('新增') && text.includes('意图') && text.includes('请点击') && text.length < 30;
+        });
+      let root = label;
+      while (root && root !== document.body) {
+        const button = [...root.querySelectorAll('button,[role="button"]')].filter(visible).find(el => !el.closest('tr'));
+        if (button) { button.click(); return true; }
+        const plus = [...root.querySelectorAll('.anticon-plus,[aria-label="plus"],svg[data-icon="plus"]')]
+          .filter(visible).find(el => !el.closest('tr'));
+        if (plus) {
+          const target = plus.closest('button,a,[role="button"],.anticon') || plus.parentElement || plus;
+          target.click();
+          return true;
+        }
+        const textPlus = [...root.querySelectorAll('span,a,i')].filter(visible)
+          .find(el => norm(el.innerText) === '+');
+        if (textPlus) {
+          const target = textPlus.closest('button,a,[role="button"]') || textPlus;
+          target.click();
+          return true;
+        }
+        root = root.parentElement;
+      }
+      return false;
+    });
+    if (!clicked) throw new Error('custom algorithm add-intent control not found');
+    await page.waitForFunction(count => document.querySelectorAll('input[id$="_word"]').length === count + 1, { timeout: 10000 }, beforeCount);
+    const row = await page.evaluate(() => {
+      const inputs = [...document.querySelectorAll('input[id$="_word"]')];
+      const word = inputs[inputs.length - 1];
+      const tr = word?.closest('tr');
+      return {
+        wordId: word?.id || '',
+        extId: tr?.querySelector('input[id$="_extWord"]')?.id || '',
+        typeId: tr?.querySelector('[id$="_type"]')?.id || '',
+      };
+    });
+    if (!row.wordId || !row.typeId) throw new Error(`custom algorithm row controls incomplete: ${definition.word}`);
+    await fillInput(page, `#${row.wordId}`, definition.word);
+    const extWord = definition.extWord || (definition.extWords || []).join('，');
+    if (extWord) {
+      if (!row.extId) throw new Error(`custom algorithm generalized-word input missing: ${definition.word}`);
+      await fillInput(page, `#${row.extId}`, extWord);
+    }
+    await selectOption(page, `#${row.typeId}`, definition.type || '命令词');
+    const actual = await page.evaluate(({ wordId, extId, typeId }) => {
+      const word = document.getElementById(wordId);
+      const ext = extId ? document.getElementById(extId) : null;
+      const type = document.getElementById(typeId)?.closest('.ant-select')?.querySelector('.ant-select-selection-item')?.innerText || '';
+      return { word: word?.value || '', extWord: ext?.value || '', type: type.trim() };
+    }, row);
+    if (actual.word !== definition.word || actual.type !== (definition.type || '命令词') || actual.extWord !== extWord) {
+      throw new Error(`custom algorithm row persistence mismatch: ${definition.word}`);
+    }
+    evidence.push({ source: 'custom-ui-add-intent', requested: definition, builtinAbsence: builtinAbsence.filter(item => item.word === definition.word || (definition.extWords || []).includes(item.word) || definition.extWord === item.word), actual });
+  }
+  return evidence;
+}
+
+async function assertAlgoRows(page, job = {}) {
+  const snapshot = await page.evaluate(() => {
+    const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    const rowNodes = [...document.querySelectorAll('input[id$="_word"]')].filter(visible).map(input => input.closest('tr') || input.closest('.ant-form-item')?.parentElement).filter(Boolean);
+    const rows = [];
+    let command = 0; let wake = 0;
+    for (const row of rowNodes) {
+      const text = (row.innerText || '').replace(/\s/g, '');
+      if (!text || /语义标签|暂无数据|新增/.test(text)) continue;
+      const kind = [...row.querySelectorAll('.ant-select-selection-item,.ant-select-selector')].map(e => e.innerText || '').join('');
+      const input = row.querySelector('input[id$="_word"]');
+      const word = String(input?.value || '').trim();
+      const type = kind.includes('唤醒词') ? 'wake' : 'command';
+      if (type === 'wake') wake += 1; else command += 1;
+      rows.push({ word, type });
+    }
+    const wordCounts = rows.reduce((acc, row) => { acc[row.word] = (acc[row.word] || 0) + 1; return acc; }, {});
+    return { total: command + wake, command, wake, rows, duplicates: Object.entries(wordCounts).filter(([, count]) => count > 1).map(([word, count]) => ({ word, count })) };
+  });
+  if (!snapshot.total) throw new Error('algorithm parameters are empty after configuration');
+  const expected = job.expectedAlgoCounts || {};
+  for (const [key, value] of Object.entries(expected)) {
+    if (Number.isFinite(Number(value)) && snapshot[key] !== Number(value)) throw new Error(`algorithm ${key} count mismatch: expected ${value}, got ${snapshot[key]}`);
+  }
+  if (snapshot.duplicates.length) throw new Error(`duplicate algorithm words: ${snapshot.duplicates.map(item => `${item.word}(${item.count})`).join(', ')}`);
+  const expectedWords = job.expectedAlgoWords || {};
+  for (const [type, words] of Object.entries(expectedWords)) {
+    const actual = snapshot.rows.filter(row => row.type === type).map(row => row.word);
+    for (const word of words || []) if (!actual.includes(word)) throw new Error(`algorithm ${type} word missing: ${word}`);
+    if (job.requireExactAlgoWords) {
+      const expectedSorted = [...words].sort();
+      const actualSorted = [...actual].sort();
+      if (JSON.stringify(actualSorted) !== JSON.stringify(expectedSorted)) {
+        throw new Error(`algorithm ${type} word set mismatch: expected ${expectedSorted.join(', ')}, got ${actualSorted.join(', ')}`);
+      }
+    }
+  }
+  if (job.expectedAlgoOrder?.length) {
+    const actualOrder = snapshot.rows.map(row => row.word);
+    const projected = actualOrder.filter(word => job.expectedAlgoOrder.includes(word));
+    if (JSON.stringify(projected) !== JSON.stringify(job.expectedAlgoOrder)) {
+      throw new Error(`algorithm order mismatch: expected ${job.expectedAlgoOrder.join(' > ')}, got ${projected.join(' > ')}`);
+    }
+  }
+  return snapshot;
+}
+
+async function captureLinkedSection(page, title) {
+  return page.evaluate(title => {
+    const visible = el => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+    };
+    const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const heading = [...document.querySelectorAll('h1,h2,h3,h4,h5,label,strong,span,div')]
+      .filter(visible).filter(el => norm(el.innerText).startsWith(title) && norm(el.innerText).length < title.length + 20)
+      .sort((a, b) => {
+        const ar = a.getBoundingClientRect(); const br = b.getBoundingClientRect();
+        return (ar.width * ar.height) - (br.width * br.height);
+      })[0];
+    let root = heading;
+    while (root?.parentElement && root.parentElement !== document.body) {
+      const parent = root.parentElement;
+      const text = norm(parent.innerText);
+      if (text.length > 40 && (parent.querySelector('table') || parent.querySelector('button[role="switch"]'))) { root = parent; break; }
+      root = parent;
+    }
+    if (!root) return { title, visible: false, text: '', rows: [], controls: [] };
+    const rows = [...root.querySelectorAll('tbody tr')].filter(visible).map((row, index) => ({ index, text: norm(row.innerText), values: [...row.querySelectorAll('input,textarea')].filter(visible).map(input => input.value), selected: [...row.querySelectorAll('.ant-select-selection-item')].filter(visible).map(el => norm(el.innerText)) }));
+    const controls = [...root.querySelectorAll('input,textarea,button,[role="switch"],.ant-select-selector')].filter(visible).map(el => ({ id: el.id || '', role: el.getAttribute('role') || '', text: norm(el.innerText), value: 'value' in el ? el.value : '', checked: el.checked ?? el.getAttribute('aria-checked') ?? null }));
+    return { title, visible: true, text: norm(root.innerText).slice(0, 12000), rows, controls };
+  }, title);
+}
+
+async function removeAlgorithmWords(page, words) {
+  const removed = [];
+  for (const word of words || []) {
+    const point = await page.evaluate(word => {
+      const visible = el => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      };
+      const input = [...document.querySelectorAll('input[id$="_word"]')].find(el => visible(el) && String(el.value || '').trim() === String(word || '').trim());
+      const row = input?.closest('tr');
+      if (!row) return null;
+      const buttons = [...row.querySelectorAll('button,a,[role="button"],svg')].filter(visible);
+      const remove = buttons.find(el => /删除|delete/i.test(`${el.innerText || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''}`)) || buttons[buttons.length - 1];
+      if (!remove) return null;
+      const target = remove.closest('button,a,[role="button"]') || remove;
+      target.scrollIntoView({ block: 'center', inline: 'center' });
+      const r = target.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, word);
+    if (!point) throw new Error(`algorithm delete control not found: ${word}`);
+    await page.mouse.click(point.x, point.y);
+    await sleep(350);
+    await confirmPopconfirm(page).catch(() => {});
+    await sleep(500);
+    const exists = await page.evaluate(word => [...document.querySelectorAll('input[id$="_word"]')].some(el => String(el.value || '').trim() === String(word || '').trim()), word);
+    if (exists) throw new Error(`algorithm word was not removed: ${word}`);
+    removed.push(word);
+  }
+  return removed;
+}
+
+function assertLinkedWords(snapshot, expected = {}) {
+  const text = String(snapshot?.text || '');
+  for (const word of expected.present || []) if (!text.includes(word)) throw new Error(`${snapshot.title} linkage missing word: ${word}`);
+  for (const word of expected.absent || []) if (text.includes(word)) throw new Error(`${snapshot.title} linkage retained removed word: ${word}`);
+}
+
+async function mutateAlgorithmConfiguration(page, job) {
+  const mutation = job.algoMutation || {};
+  const evidence = {
+    requested: mutation,
+    before: {
+      algorithm: await assertAlgoRows(page, {}),
+      voice: await captureLinkedSection(page, '语音注册'),
+      multiWake: await captureLinkedSection(page, '多唤醒'),
+    },
+    removed: [], added: null, afterMutation: null, afterReconfigure: null,
+  };
+  evidence.removed = await removeAlgorithmWords(page, mutation.removeWords || []);
+  if ((mutation.addWords || []).length) {
+    evidence.added = await addBuiltinRecommendations(page, {
+      ...job,
+      builtinRecommendationMode: 'selected',
+      builtinRecommendations: mutation.addWords,
+      builtinRecommendationValidation: { verifyReopen: true },
+    });
+  }
+  evidence.afterMutation = {
+    algorithm: await assertAlgoRows(page, { expectedAlgoCounts: mutation.expectedAlgoCounts || {}, expectedAlgoWords: mutation.expectedAlgoWords || {}, expectedAlgoOrder: mutation.expectedAlgoOrder || [] }),
+    voice: await captureLinkedSection(page, '语音注册'),
+    multiWake: await captureLinkedSection(page, '多唤醒'),
+  };
+  if (mutation.voiceLinkage) assertLinkedWords(evidence.afterMutation.voice, mutation.voiceLinkage);
+  if (mutation.multiWakeLinkage) assertLinkedWords(evidence.afterMutation.multiWake, mutation.multiWakeLinkage);
+  if (mutation.reconfigure !== false) await configureAlgo(page, { ...job, algoConfig: mutation.algoConfig || job.algoConfig || {} });
+  evidence.afterReconfigure = {
+    algorithm: await assertAlgoRows(page, { expectedAlgoCounts: mutation.expectedAlgoCounts || {}, expectedAlgoWords: mutation.expectedAlgoWords || {}, expectedAlgoOrder: mutation.expectedAlgoOrder || [] }),
+    voice: await captureLinkedSection(page, '语音注册'),
+    multiWake: await captureLinkedSection(page, '多唤醒'),
+  };
+  if (mutation.finalVoiceLinkage) assertLinkedWords(evidence.afterReconfigure.voice, mutation.finalVoiceLinkage);
+  if (mutation.finalMultiWakeLinkage) assertLinkedWords(evidence.afterReconfigure.multiWake, mutation.finalMultiWakeLinkage);
+  return evidence;
 }
 
 async function configureAlgo(page, job) {
@@ -1287,7 +2022,19 @@ async function normalizeVoiceStudyRow(page, headerText, condition, registMode = 
   }, { headerText, condition, registMode });
 }
 
-async function pollLatestRelease(token, productName, startedAtMs, timeoutSec = 600, productId = '') {
+async function pollLatestRelease(token, productName, startedAtMs, timeoutSec = 600, productId = '', releaseId = '') {
+  if (releaseId) {
+    const deadline = Date.now() + timeoutSec * 1000;
+    let latest = null;
+    while (Date.now() < deadline) {
+      latest = await apiGet('/fw/release/detail', token, { id: releaseId });
+      if (String(latest?.id || '') !== String(releaseId)) throw new Error(`release detail ID mismatch: expected ${releaseId}, got ${latest?.id}`);
+      if (String(latest?.prodId || '') !== String(productId)) throw new Error(`release product mismatch: expected ${productId}, got ${latest?.prodId}`);
+      if (['success', 'fail', 'failed', 'error'].includes(String(latest.status || '').toLowerCase())) return { productId, release: latest };
+      await sleep(8000);
+    }
+    return { productId, release: latest, timeout: true };
+  }
   const deadline = Date.now() + timeoutSec * 1000;
   let latest = null;
   let product = null;
@@ -1357,14 +2104,286 @@ async function fillVersionDescription(page, job) {
   return true;
 }
 
-async function runJob(browser, token, job, args) {
+async function clickVisibleExact(page, text, selector = 'button,a,span,div,label,[role=tab]') {
+  const point = await page.evaluate(({ text, selector }) => {
+    const norm = value => String(value || '').replace(/\s+/g, '');
+    const visible = el => {
+      if (!el) return false;
+      const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const target = norm(text);
+    const candidates = [...document.querySelectorAll(selector)].filter(el => visible(el) && norm(el.innerText) === target)
+      .map(el => {
+        const clickable = el.closest('button,a,label,[role=tab],.ant-segmented-item,.ant-tabs-tab,.ant-radio-button-wrapper') || el;
+        const rect = clickable.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, area: rect.width * rect.height };
+      }).sort((a, b) => a.area - b.area);
+    return candidates[0] || null;
+  }, { text, selector });
+  if (!point) return false;
+  await page.mouse.click(point.x, point.y);
+  await sleep(700);
+  return true;
+}
+
+async function closeTopVisibleModal(page) {
+  const closed = await page.evaluate(() => {
+    const visible = el => {
+      if (!el) return false;
+      const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const modal = [...document.querySelectorAll('.ant-modal')].filter(visible).pop();
+    if (!modal) return false;
+    const button = [...modal.querySelectorAll('button')].filter(visible).find(el => (el.innerText || '').replace(/\s/g, '') === '关闭') || modal.querySelector('.ant-modal-close');
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (closed) await sleep(700);
+  return closed;
+}
+
+async function captureUiState(page, dir, name, extra = {}) {
+  await screenshot(page, dir, `${name}.png`);
+  return captureVisibleInventory(page, dir, name, extra);
+}
+
+async function captureAlgorithmUiStates(page, dir, result) {
+  const states = {};
+  states.simple = (await captureUiState(page, dir, 'inventory-algo-simple', { state: 'algo-simple' })).summary;
+
+  if (await clickVisibleExact(page, '完整模式')) {
+    states.full = (await captureUiState(page, dir, 'inventory-algo-full', { state: 'algo-full' })).summary;
+    await clickVisibleExact(page, '简洁模式');
+  }
+
+  try {
+    await clickText(page, '内置词条推荐', 'BUTTON', 8000);
+    await page.waitForSelector('.ant-modal', { visible: true, timeout: 10000 });
+    states.recommendation = (await captureUiState(page, dir, 'inventory-recommendation-open', { state: 'recommendation-open' })).summary;
+    await closeTopVisibleModal(page);
+  } catch (error) {
+    states.recommendation = { error: String(error.message || error) };
+    await closeTopVisibleModal(page).catch(() => {});
+  }
+
+  try {
+    await setSwitchNearLabel(page, '语音注册（自学习）', true);
+    await sleep(800);
+    states.voiceCommon = (await captureUiState(page, dir, 'inventory-voice-common', { state: 'voice-common' })).summary;
+    await setVoiceRegistMode(page, '连续学习');
+    await setVoiceRegistConfigTab(page, '连续学习').catch(() => {});
+    states.voiceContinuous = (await captureUiState(page, dir, 'inventory-voice-continuous', { state: 'voice-continuous' })).summary;
+    await setVoiceRegistMode(page, '指定学习');
+    await setVoiceRegistConfigTab(page, '指定学习').catch(() => {});
+    states.voiceSpecific = (await captureUiState(page, dir, 'inventory-voice-specific', { state: 'voice-specific' })).summary;
+  } catch (error) {
+    states.voice = { error: String(error.message || error) };
+  } finally {
+    await setSwitchNearLabel(page, '语音注册（自学习）', false).catch(() => {});
+  }
+
+  try {
+    await setSwitchNearLabel(page, '多唤醒切换', true);
+    await sleep(800);
+    for (const [key, label] of [['multiLoop', '循环切换'], ['multiSpecified', '指定切换'], ['multiProtocol', '协议切换']]) {
+      await setMultiWakeMode(page, label);
+      states[key] = (await captureUiState(page, dir, `inventory-${key.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`)}`, { state: key })).summary;
+    }
+  } catch (error) {
+    states.multiWake = { error: String(error.message || error) };
+  } finally {
+    await setSwitchNearLabel(page, '多唤醒切换', false).catch(() => {});
+  }
+
+  result.uiInventory = { ...(result.uiInventory || {}), algorithmStates: states };
+  return states;
+}
+
+async function captureDepthUiStates(page, dir, result) {
+  const states = {};
+  for (const [key, label] of [['waiting', '唤醒等待状态'], ['command', '唤醒后命令词']]) {
+    await clickVisibleExact(page, label).catch(() => false);
+    await sleep(700);
+    const inventory = await captureUiState(page, dir, `inventory-depth-${key}`, { state: `depth-${key}` });
+    const pageState = await page.evaluate(() => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const table = [...document.querySelectorAll('table')].filter(visible).find(el => /DEC/.test(el.innerText || '') && /E2E/.test(el.innerText || ''));
+      const rows = table ? [...table.querySelectorAll('tbody tr')].filter(row => visible(row) && !/暂无数据/.test(row.innerText || '')) : [];
+      const editable = rows.flatMap(row => [...row.querySelectorAll('input,textarea,select,button,[role="checkbox"],[role="switch"],.ant-select-selector')].filter(visible)).length;
+      const notices = [...document.querySelectorAll('.ant-message-notice-content,.ant-notification-notice-message,.ant-form-item-explain-error')].filter(visible).map(el => (el.innerText || '').trim()).filter(Boolean);
+      return { rowCount: rows.length, editableControlCount: editable, emptyState: document.body.innerText.includes('暂无数据'), notices };
+    });
+    const requestFailure = (result.networkEvidence || []).some(item => Number(item.status) >= 400);
+    const classification = pageState.rowCount > 0
+      ? (pageState.editableControlCount > 0 ? 'editable-rows' : 'read-only-rows')
+      : (requestFailure ? 'request-failure' : pageState.notices.length ? 'ui-validation-error' : 'ui-no-data');
+    states[key] = { ...pageState, classification, summary: inventory.summary };
+  }
+  result.uiInventory = { ...(result.uiInventory || {}), depthStates: states };
+  result.depthEvidence = { states, networkEvidence: result.networkEvidence || [] };
+  return states;
+}
+
+async function configureDepthTuning(page, vectors) {
+  const evidence = [];
+  const visibleHandles = async handles => {
+    const output = [];
+    for (const handle of handles) {
+      if (await handle.evaluate(el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      })) output.push(handle);
+    }
+    return output;
+  };
+  for (const vector of vectors || []) {
+    const tabLabel = vector.tab === 'waiting' || vector.tab === '唤醒等待状态' ? '唤醒等待状态' : '唤醒后命令词';
+    if (!(await clickVisibleExact(page, tabLabel))) throw new Error(`depth tuning tab not found: ${tabLabel}`);
+    await sleep(600);
+    const expandEvidence = await page.evaluate(vector => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const table = [...document.querySelectorAll('table')].filter(visible).find(el => /DEC/.test(el.innerText || '') && /E2E/.test(el.innerText || ''));
+      const rows = table ? [...table.querySelectorAll('tbody tr')].filter(visible) : [];
+      const row = rows.find(el => (el.innerText || '').includes(vector.word)) || (vector.word ? null : rows[Number(vector.rowIndex) || 0]);
+      if (!row) return { clicked: false, reason: 'row-not-found' };
+      const firstCell = row.querySelector('td');
+      const candidates = firstCell ? [...firstCell.querySelectorAll('button,[role="button"],svg,span,[class*="icon"]')].filter(visible) : [];
+      const button = candidates.find(el => /expand|caret|right|展开|向右/i.test(`${el.className || ''} ${el.getAttribute('aria-label') || ''} ${el.title || ''}`)) || candidates.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0];
+      if (button) button.click();
+      return { clicked: Boolean(button), className: button?.className?.baseVal || button?.className || '', ariaLabel: button?.getAttribute('aria-label') || '', rowText: (row.innerText || '').replace(/\s+/g, ' ').trim(), firstCellHtml: (firstCell?.innerHTML || '').slice(0, 1200) };
+    }, vector);
+    if (expandEvidence.clicked) await sleep(500);
+    const state = await page.evaluate(vector => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      document.querySelectorAll('[data-codex-depth-target]').forEach(el => el.removeAttribute('data-codex-depth-target'));
+      const table = [...document.querySelectorAll('table')].filter(visible).find(el => /DEC/.test(el.innerText || '') && /E2E/.test(el.innerText || ''));
+      if (!table) return { error: 'depth table not found' };
+      const rows = [...table.querySelectorAll('tbody tr')].filter(visible);
+      const parent = rows.find(el => (el.innerText || '').includes(vector.word)) || (vector.word ? null : rows[Number(vector.rowIndex) || 0]);
+      if (!parent) return { error: `depth row not found: ${vector.word || vector.rowIndex}` };
+      const targets = rows.filter(el => (el.innerText || '').includes(vector.word) &&
+        (!vector.allowSingleRow || /ant-table-row-level-[1-9]/.test(el.className || '')));
+      targets.forEach(el => el.setAttribute('data-codex-depth-target', 'true'));
+      const snapshots = targets.map(row => ({
+        rowText: (row.innerText || '').replace(/\s+/g, ' ').trim(),
+        rowClass: row.className || '',
+        checks: [...row.querySelectorAll('input[type="checkbox"]')].filter(visible).map(el => el.checked),
+        thresholds: [...row.querySelectorAll('.ant-input-number-input,input[type="number"],[role="spinbutton"]')].filter(visible).map(el => el.value),
+      }));
+      return { before: snapshots, requested: vector, targetRowCount: targets.length };
+    }, vector);
+    if (state.error) throw new Error(state.error);
+    const minimumRows = vector.allowSingleRow ? 1 : 2;
+    if (state.targetRowCount < minimumRows) throw new Error(`depth target rows not exposed: ${tabLabel}/${vector.word}; expected>=${minimumRows}; expand=${JSON.stringify(expandEvidence)}`);
+    const unavailableDisabledGroups = [];
+    for (const group of vector.groups || []) {
+      const index = Number(group.index);
+      const rowHandles = await page.$$('[data-codex-depth-target="true"]');
+      for (let rowIndex = 0; rowIndex < rowHandles.length; rowIndex += 1) {
+        const row = rowHandles[rowIndex];
+        const checkboxes = await visibleHandles(await row.$$('input[type="checkbox"]'));
+        const thresholds = await visibleHandles(await row.$$('.ant-input-number-input,input[type="number"],[role="spinbutton"]'));
+        const checkbox = checkboxes[index];
+        const threshold = thresholds[index];
+        if (!checkbox && !threshold && group.enabled === false) {
+          unavailableDisabledGroups.push({ rowIndex, group: index, requested: group, reason: 'platform-control-not-exposed' });
+          continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(group, 'enabled')) {
+          if (!checkbox) throw new Error(`depth checkbox not found: ${tabLabel}/${vector.word}/group ${index}`);
+          const checked = await checkbox.evaluate(el => el.checked);
+          if (checked !== Boolean(group.enabled)) await checkbox.click();
+        }
+        if (Object.prototype.hasOwnProperty.call(group, 'threshold')) {
+          if (!threshold) throw new Error(`depth threshold not found: ${tabLabel}/${vector.word}/group ${index}`);
+          await threshold.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'center' }));
+          await threshold.click({ clickCount: 3 });
+          await page.keyboard.down('Control');
+          await page.keyboard.press('A');
+          await page.keyboard.up('Control');
+          await page.keyboard.type(String(group.threshold));
+          await page.keyboard.press('Tab');
+        }
+        await sleep(250);
+      }
+    }
+    await sleep(700);
+    const verified = await page.evaluate(() => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect(); const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      return [...document.querySelectorAll('[data-codex-depth-target="true"]')].filter(visible).map(row => ({
+        rowText: (row.innerText || '').replace(/\s+/g, ' ').trim(),
+        checks: [...row.querySelectorAll('input[type="checkbox"]')].filter(visible).map(el => el.checked),
+        thresholds: [...row.querySelectorAll('.ant-input-number-input,input[type="number"],[role="spinbutton"]')].filter(visible).map(el => el.value),
+      }));
+    });
+    for (const group of vector.groups || []) {
+      const index = Number(group.index);
+      for (let rowIndex = 0; rowIndex < verified.length; rowIndex += 1) {
+        const row = verified[rowIndex];
+        if (row.checks[index] === undefined && row.thresholds[index] === undefined && group.enabled === false) continue;
+        if (Object.prototype.hasOwnProperty.call(group, 'enabled') && row.checks[index] !== Boolean(group.enabled)) throw new Error(`depth checkbox persistence mismatch: ${tabLabel}/${vector.word}/group ${index}`);
+        if (Object.prototype.hasOwnProperty.call(group, 'threshold') && String(row.thresholds[index]) !== String(group.threshold)) throw new Error(`depth threshold persistence mismatch: ${tabLabel}/${vector.word}/group ${index}`);
+      }
+    }
+    evidence.push({ tab: tabLabel, expandEvidence, ...state, after: verified, verified, unavailableDisabledGroups });
+  }
+  return evidence;
+}
+
+async function runJob(browser, token, job, args, shared = {}) {
   const jobDir = path.join(args.outDir, job.jobId.replace(/[^\w\u4e00-\u9fa5.-]+/g, '_'));
   fs.mkdirSync(jobDir, { recursive: true });
-  const result = { job, startedAt: new Date().toISOString(), status: 'running', steps: [], errors: [] };
+  const result = { job, parameterVector: job.parameterVector || job.profile || job.jobId, startedAt: new Date().toISOString(), status: 'running', steps: [], errors: [], networkEvidence: [] };
   const save = () => fs.writeFileSync(path.join(jobDir, 'result.json'), JSON.stringify(result, null, 2));
   const page = await browser.newPage();
   page.setDefaultTimeout(40000); await page.setViewport({ width: 1440, height: 1100 });
-  page.on('response', res => { const url = res.url(); if (url.includes('/api/backend') && /fw\/release|biz\/prod|fw\/config/.test(url)) result.steps.push({ type: 'response', status: res.status(), url: url.slice(0, 260) }); });
+  page.on('response', res => {
+    const url = res.url();
+    if (url.includes('/api/backend') && /fw\/release|biz\/prod|fw\/config/.test(url)) {
+      const evidence = { type: 'response', status: res.status(), method: res.request().method(), url: url.split('?')[0].slice(0, 260) };
+      result.steps.push(evidence);
+      if (/depth|config|algo/i.test(url)) result.networkEvidence.push({ ...evidence, at: new Date().toISOString() });
+      if (/fw\/release\/saveDepthData/.test(url)) {
+        res.text().then(body => {
+          let parsed = body;
+          try { parsed = JSON.parse(body); } catch (_) {}
+          result.depthSaveResponses ||= [];
+          result.depthSaveResponses.push({ status: res.status(), body: parsed });
+        }).catch(error => {
+          result.depthSaveResponses ||= [];
+          result.depthSaveResponses.push({ status: res.status(), error: String(error.message || error) });
+        });
+      }
+    }
+  });
+  page.on('request', req => {
+    const url = req.url();
+    if (/fw\/release\/getDepthData/.test(url)) {
+      const releaseId = new URL(url).searchParams.get('id');
+      if (releaseId && /^\d+$/.test(releaseId)) result.currentReleaseId = releaseId;
+    }
+    if (!/fw\/release\/saveDepthData/.test(url)) return;
+    const raw = req.postData() || '';
+    let body = raw;
+    try { body = JSON.parse(raw); } catch (_) {}
+    result.depthSaveRequests ||= [];
+    result.depthSaveRequests.push({ method: req.method(), url: url.split('?')[0], body });
+  });
   try {
     await hydrateSession(page, token);
     let product = null;
@@ -1372,7 +2391,9 @@ async function runJob(browser, token, job, args) {
       try {
         const created = await createProductUi(page, job);
         result.steps.push({ type: 'ui-create-product', status: created?.existed ? 'exists' : 'ok' });
-        product = await findProductApi(token, job.productName);
+        product = job.deepSearchVersion
+          ? await findDeepProductApi(token, job.productName)
+          : await findProductApi(token, job.productName);
         if (!product) throw new Error(`product not found after UI create: ${job.productName}`);
       }
       catch (e) {
@@ -1384,17 +2405,24 @@ async function runJob(browser, token, job, args) {
       product = await ensureProductApi(token, job); result.steps.push({ type: 'api-create-product', status: 'ok', productId: product.id });
     }
     result.product = product;
+    if (shared.productId && String(product.id) !== String(shared.productId)) {
+      throw new Error(`productId changed within matrix: expected ${shared.productId}, got ${product.id}`);
+    }
+    if (job.expectedProductId && String(product.id) !== String(job.expectedProductId)) {
+      throw new Error(`unexpected productId: expected ${job.expectedProductId}, got ${product.id}`);
+    }
+    shared.productId = String(product.id);
     await screenshot(page, jobDir, '00-after-product-create.png');
     if (args.stopAfterProduct) {
       result.status = 'product_created';
       result.steps.push({ type: 'ui-stop-after-product', status: 'done' });
       return result;
     }
-    await openProductDetail(page, job.productName);
+    await openProductDetail(page, job.productName, Boolean(job.deepSearchVersion));
     await screenshot(page, jobDir, '01-product-detail.png');
     await clickText(page, '快速创建', 'BUTTON');
     await sleep(3000);
-    await page.waitForFunction(() => {
+    if (!job.deepSearchVersion) await page.waitForFunction(() => {
       const visible = el => {
         if (!el) return false;
         const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
@@ -1412,13 +2440,31 @@ async function runJob(browser, token, job, args) {
     await screenshot(page, jobDir, '02-basic-configured.png');
     await clickText(page, '继续', 'BUTTON');
     await screenshot(page, jobDir, '03-algo-open.png');
-    if (job.skipAlgoImport) {
+    if (job.useBuiltinRecommendations) {
+      result.recommendationEvidence = await addBuiltinRecommendations(page, job);
+      result.steps.push({ type: 'ui-builtin-recommendations', status: 'added', words: job.builtinRecommendations || ['小西小西', '打开风扇', '关闭风扇'] });
+    } else if (job.skipAlgoImport) {
       result.steps.push({ type: 'ui-algo-import', status: 'skipped', reason: job.skipReason || 'skipAlgoImport=true' });
     } else {
       await importAlgoTemplate(page, jobDir, job.algoTemplate);
     }
+    if (job.customAlgorithmWords?.length) {
+      result.customAlgorithmEvidence = await addCustomAlgorithmWords(page, job.customAlgorithmWords);
+      result.steps.push({ type: 'ui-custom-algorithm-words', status: 'added', words: job.customAlgorithmWords.map(item => item.word) });
+    }
+    if (job.captureUiInventory) await captureAlgorithmUiStates(page, jobDir, result);
     await configureAlgo(page, job);
+    if (job.algoMutation) {
+      result.linkageEvidence = await mutateAlgorithmConfiguration(page, job);
+      result.steps.push({ type: 'ui-algorithm-linkage-mutation', status: 'done', mutation: job.algoMutation });
+    }
+    if (job.deepSearchVersion || job.useBuiltinRecommendations) {
+      const algoRows = await assertAlgoRows(page, job);
+      result.algoCounts = algoRows;
+      result.steps.push({ type: 'ui-algo-rows', status: 'valid', counts: algoRows });
+    }
     await dumpState(page, jobDir, '04-algo-configured');
+    await captureVisibleInventory(page, jobDir, '04-algo-configured', { state: 'algo-configured' });
     await screenshot(page, jobDir, '04-algo-configured.png');
     await clickText(page, '继续', 'BUTTON');
     await screenshot(page, jobDir, '05-depth-tune.png');
@@ -1432,15 +2478,50 @@ async function runJob(browser, token, job, args) {
       result.steps.push({ type: 'ui-depth-reset', status: 'done' });
       await screenshot(page, jobDir, '05-depth-reset.png');
     }
+    if (job.depthConfig?.length) {
+      result.depthConfigEvidence = await configureDepthTuning(page, job.depthConfig);
+      result.steps.push({ type: 'ui-depth-config', status: 'configured', vectors: job.depthConfig });
+      await screenshot(page, jobDir, '05-depth-configured.png');
+    }
+    if (job.captureUiInventory || job.captureDepthInventory) await captureDepthUiStates(page, jobDir, result);
+    else await captureVisibleInventory(page, jobDir, '05-depth-tune', { state: 'depth-current' });
     await clickText(page, '继续', 'BUTTON');
     await screenshot(page, jobDir, '06-complete.png');
     const descFilled = await fillVersionDescription(page, job).catch(() => false);
     result.steps.push({ type: 'ui-version-description', status: descFilled ? 'filled' : 'version_description_ui_not_exposed', value: shortVersionDescription(job) });
     await dumpState(page, jobDir, '06-complete-configured');
+    await captureVisibleInventory(page, jobDir, '06-complete-configured', { state: 'complete' });
+    if (args.stopBeforeGenerate) {
+      await sleep(1000);
+      result.status = 'configured_not_submitted';
+      result.steps.push({ type: 'ui-stop-before-generate', status: 'done' });
+      return result;
+    }
+    if (job.depthConfig?.length) {
+      await sleep(1000);
+      const requests = result.depthSaveRequests || [];
+      const responses = result.depthSaveResponses || [];
+      if (!requests.length) throw new Error('depth configuration was not persisted: saveDepthData request missing');
+      if (!responses.length) throw new Error('depth configuration persistence response missing');
+      const rejected = responses.filter(item => Number(item.status) >= 400 || (item.body && typeof item.body === 'object' && item.body.code !== undefined && Number(item.body.code) !== 200));
+      if (rejected.length) throw new Error(`depth configuration persistence rejected: ${JSON.stringify(rejected)}`);
+      result.steps.push({ type: 'ui-depth-save-gate', status: 'passed', requestCount: requests.length, responseCount: responses.length });
+    }
+    if (job.submissionKey) {
+      if (!result.currentReleaseId) throw new Error('current wizard release ID missing before submission');
+      const candidate = await apiGet('/fw/release/detail', token, { id: result.currentReleaseId });
+      if (String(candidate?.id || '') !== String(result.currentReleaseId) || String(candidate?.prodId || '') !== String(job.expectedProductId)) {
+        throw new Error(`pre-submit release/product mismatch: ${result.currentReleaseId}`);
+      }
+      result.steps.push({ type: 'ui-release-identity-gate', status: 'passed', releaseId: result.currentReleaseId, productId: job.expectedProductId });
+    }
+    result.submission = updateSubmissionLedger(job, { status: 'attempting', jobId: job.jobId, parameterVector: result.parameterVector });
+    save();
     const started = Date.now();
     try {
       await clickText(page, '生成并关闭', 'BUTTON');
       result.steps.push({ type: 'ui-generate-click', status: 'clicked' });
+      result.submission = updateSubmissionLedger(job, { status: 'clicked', jobId: job.jobId, clickedAt: new Date().toISOString() });
     } catch (e) {
       // Some builds close the wizard or return to the detail page before the
       // waiter observes the button. Polling the release list is authoritative.
@@ -1451,13 +2532,31 @@ async function runJob(browser, token, job, args) {
       result.status = 'submitted';
       result.poll = { productId: product?.id || null, submittedAt: new Date(started).toISOString(), skipped: 'submit-only' };
     } else {
-      result.poll = await pollLatestRelease(token, job.productName, started, args.pollSeconds, product?.id || '');
+    result.poll = await pollLatestRelease(token, job.productName, started, args.pollSeconds, product?.id || '', result.currentReleaseId || '');
+    result.releaseEvidence = result.poll?.release ? {
+      releaseId: result.poll.release.id,
+      productId: result.poll.productId || product?.id || '',
+      status: result.poll.release.status,
+      pkgUrl: result.poll.release.pkgUrl || null,
+      pkgTaskId: result.poll.release.pkgTaskId || null,
+      pkgPipelineId: result.poll.release.pkgPipelineId || null,
+    } : null;
       const status = result.poll?.release?.status || (result.poll?.timeout ? 'timeout' : 'unknown');
-      result.status = (String(status).toLowerCase() === 'success' || result.poll?.release?.pkgUrl) ? 'success' : 'failed';
+      result.status = String(status).toLowerCase() === 'success' &&
+        Boolean(result.releaseEvidence?.pkgTaskId && result.releaseEvidence?.pkgPipelineId && result.releaseEvidence?.pkgUrl) ? 'success' : 'failed';
+    }
+    if (job.submissionKey) {
+      result.submission = updateSubmissionLedger(job, {
+        status: result.status,
+        jobId: job.jobId,
+        releaseId: result.releaseEvidence?.releaseId || null,
+        pkgTaskId: result.releaseEvidence?.pkgTaskId || null,
+        pkgPipelineId: result.releaseEvidence?.pkgPipelineId || null,
+      });
     }
   } catch (e) {
     result.status = 'failed';
-    result.errors.push({ message: String(e.message || e), stack: e.stack || '' });
+    result.errors.push({ message: redactSensitive(e.message || e), stack: redactSensitive(e.stack || '') });
     try { await screenshot(page, jobDir, 'error.png'); await dumpState(page, jobDir, 'error-state'); } catch (_) {}
   } finally {
     result.finishedAt = new Date().toISOString(); save(); await page.close().catch(() => {});
@@ -1467,19 +2566,30 @@ async function runJob(browser, token, job, args) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.help) { printHelp(); return; }
   fs.mkdirSync(args.outDir, { recursive: true });
   const plan = JSON.parse(fs.readFileSync(args.plan, 'utf8'));
-  let jobs = plan.jobs.slice(args.offset, args.limit ? args.offset + args.limit : undefined);
+  const normalizedJobs = plan.jobs.map(job => ({
+    ...job,
+    productName: job.productName || plan.productName,
+    deepSearchVersion: job.deepSearchVersion || plan.deepSearchVersion,
+    product: { ...(plan.product || {}), ...(job.product || {}) },
+    submissionLedger: job.submissionLedger || plan.submissionLedger || '',
+  }));
+  let jobs = normalizedJobs.slice(args.offset, args.limit ? args.offset + args.limit : undefined);
   const token = readToken();
   const chromeArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1440,1100'];
   if (process.env.LISTENAI_HOST_IP) chromeArgs.push(`--host-resolver-rules=MAP integration-platform.listenai.com ${process.env.LISTENAI_HOST_IP}`);
   const browser = await puppeteer.launch({ executablePath: args.chrome, headless: args.headless, args: chromeArgs });
   const summary = { startedAt: new Date().toISOString(), args, counts: { total: jobs.length, success: 0, failed: 0, submitted: 0 }, results: [] };
   const summaryPath = path.join(args.outDir, 'run_summary.json');
+  const shared = { productId: plan.productId || '' };
   for (const job of jobs) {
+    if (shared.productId) job.expectedProductId = shared.productId;
     console.log(`[job] ${job.jobId} ${job.productName}`);
-    const r = await runJob(browser, token, job, args);
-    summary.results.push({ jobId: job.jobId, productName: job.productName, profile: job.profile, status: r.status, release: r.poll?.release || null, errors: r.errors });
+    const r = await runJob(browser, token, job, args, shared);
+    summary.productId = shared.productId || r.product?.id || summary.productId || null;
+    summary.results.push({ jobId: job.jobId, parameterVector: r.parameterVector, productId: r.product?.id || null, productName: job.productName, profile: job.profile, status: r.status, release: r.poll?.release || null, releaseEvidence: r.releaseEvidence || null, algoCounts: r.algoCounts || null, errors: r.errors });
     const bucket = r.status === 'success' ? 'success' : r.status === 'submitted' ? 'submitted' : r.status === 'product_created' ? 'product_created' : 'failed';
     summary.counts[bucket] = (summary.counts[bucket] || 0) + 1;
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
@@ -1491,4 +2601,4 @@ async function main() {
   console.log(JSON.stringify(summary.counts, null, 2));
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch(err => { console.error(redactSensitive(err?.stack || err)); process.exit(1); });

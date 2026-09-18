@@ -23,6 +23,11 @@ scripts/artifacts/
 scripts/burn/burn_log/
 scripts/ui/node_modules/
 
+# Local validation runs and agent working state
+runtime/
+.codex/
+openspec/
+
 references/Profile*/
 references/**/Cache/
 references/**/Code Cache/

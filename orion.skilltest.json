@@ -1533,6 +1533,86 @@
           "estimated_minutes": 60
         }
       ]
+    },
+    {
+      "id": "deep_custom_algorithm_package_validation",
+      "module": "firmware_packaging",
+      "name": "深定制算法开关与词表一致性验证",
+      "summary": "固定单产品、同产品多 release 验证深定制内置词、自定义词、父子词、DEC/E2E/mainE2E/ASRFree 和四个 stage1 词表。",
+      "requirement": "平台升级后能够重复执行深定制能力扫描、最小矩阵和交叉矩阵，并区分 PASS、EXPECTED、BLOCKED、FAIL。",
+      "logic": "UI-only 新建或复用唯一产品；先执行未提交 smoke，再串行提交配置；每个成功 release 下载 ZIP，校验 web_config.json、keywords_main/mlc.txt、maplist_main/mlc.txt 和 SHA-256；平台拒绝和 UI 控件未暴露不混入固件失败率。",
+      "modes": [
+        "plan-only",
+        "dry-run",
+        "execute"
+      ],
+      "recommended_mode": "execute",
+      "runner": "agent_shell",
+      "task": "node scripts/ui/build_deep_custom_depth_runner_plan.js; node scripts/ui/ui_3021_packaging_runner.js --create-mode ui-strict; node scripts/ui/validate_deep_custom_depth_artifact.js; node scripts/ui/generate_deep_custom_validation_report.js",
+      "requires": [
+        "有效 LISTENAI_TOKEN 或持久浏览器登录态",
+        "Chrome/Chromium 可用",
+        "深定制版本可在 UI 搜索到",
+        "固定产品或可通过 UI 新建一个产品",
+        "深度调优和算法配置页面可进入"
+      ],
+      "side_effects": [
+        "通过 UI 新建一个产品（仅产品不存在时）",
+        "同一产品创建多个 release",
+        "触发平台算法资源构建",
+        "下载固件 ZIP",
+        "不包含烧录和真机设备操作"
+      ],
+      "risk_level": "medium",
+      "test_cases": [
+        {
+          "id": "deep_custom_ui_smoke",
+          "title": "深定制未提交能力探测",
+          "objective": "确认推荐词、自定义意图、父子词、深度页签和目标开关在当前 UI 中真实存在。",
+          "steps": [
+            "实时搜索深定制版本并进入快速创建。",
+            "添加内置推荐词和一组自定义父子词。",
+            "记录算法表控件、深度调优页签和每行 DEC/E2E/mainE2E/ASRFree 控件。",
+            "保存深度配置但停止在生成前。"
+          ],
+          "expected_results": [
+            "词源和父子关系符合计划。",
+            "缺失控件被精确记录为 UI 能力边界。",
+            "提交数为 0。"
+          ],
+          "pass_criteria": "可执行配置进入矩阵；不可执行配置有证据且不伪造 release。",
+          "fail_criteria": "算法表为空、词源错绑或脚本误判控件缺失。",
+          "blocked_conditions": [
+            "认证失效",
+            "版本搜索不到",
+            "页面能力未加载"
+          ],
+          "estimated_minutes": 10
+        },
+        {
+          "id": "deep_custom_route_truth_table",
+          "title": "深定制开关真值表与交叉矩阵",
+          "objective": "验证唤醒 DEC/E2E/mainE2E、命令 DEC/E2E/ASRFree 的单独和交叉组合。",
+          "steps": [
+            "为每个向量生成唯一 submissionKey 和版本描述。",
+            "同一产品串行创建 release，轮询 status/task/pipeline/pkgUrl。",
+            "下载成功 ZIP 并执行 CRC、web_config 和四词表断言。",
+            "将平台拒绝、UI 受限和真实 FAIL 分开汇总。"
+          ],
+          "expected_results": [
+            "至少覆盖 W=001/011/101/111 与 C 的 8 种状态交叉。",
+            "mainE2E 关闭导致的资源约束有独立证据。",
+            "成功包的配置和词表逐词一致。"
+          ],
+          "pass_criteria": "有效组合全部达到 success 且静态断言通过；已知拒绝按 EXPECTED 记录。",
+          "fail_criteria": "成功包配置未落地、词表路由错误或出现无法归因的构建失败。",
+          "blocked_conditions": [
+            "目标开关未在 UI 暴露",
+            "平台构建队列不可用"
+          ],
+          "estimated_minutes": 180
+        }
+      ]
     }
   ]
 }
