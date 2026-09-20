@@ -26,6 +26,7 @@ function parseArgs(argv) {
     chrome: DEFAULT_CHROME,
     headed: false,
     inPlace: false,
+    copyProfile: false,
     retainRoot: DEFAULT_RETAIN_ROOT,
     timeoutMs: 180000,
     outDir: path.resolve('artifacts/tasks/platform-token-refresh-' + stamp()),
@@ -37,12 +38,13 @@ function parseArgs(argv) {
     else if (a === '--chrome') args.chrome = argv[++i];
     else if (a === '--headed') args.headed = true;
     else if (a === '--in-place') args.inPlace = true;
+    else if (a === '--copy-profile') args.copyProfile = true;
     else if (a === '--retain-root') args.retainRoot = path.resolve(argv[++i]);
     else if (a === '--timeout-ms') args.timeoutMs = Number(argv[++i]);
     else if (a === '--out-dir') args.outDir = path.resolve(argv[++i]);
     else if (a === '--no-persist') args.persist = false;
     else if (a === '--help') {
-      console.log('Usage: node scripts/ui/refresh_platform_token_from_profile.js [--profile-dir references/Profile\\ 7] [--headed] [--in-place] [--retain-root DIR] [--timeout-ms 180000] [--out-dir DIR] [--no-persist]');
+      console.log('Usage: node scripts/ui/refresh_platform_token_from_profile.js [--profile-dir DIR] [--headed] [--in-place] [--copy-profile] [--retain-root DIR] [--timeout-ms 180000] [--out-dir DIR] [--no-persist]');
       process.exit(0);
     } else {
       throw new Error(`unknown arg: ${a}`);
@@ -78,8 +80,18 @@ function copyProfileToRetainedRoot(profileDir, retainRoot) {
   if (fs.existsSync(sourceLocalState) && !fs.existsSync(targetLocalState)) {
     fs.copyFileSync(sourceLocalState, targetLocalState);
   }
-  deleteLocks(root);
-  return { userDataDir: root, profileName, copied: !existed, retained: true };
+  // Only a newly-created copy may contain stale lock files. Never remove locks
+  // from the canonical retained profile: another Chrome process may be using it.
+  if (!existed) deleteLocks(root);
+  return {
+    userDataDir: root,
+    profileName,
+    copied: !existed,
+    retained: true,
+    persistent: true,
+    sourceProfile: profileDir,
+    retainedProfile: target,
+  };
 }
 
 function deleteLocks(root) {
@@ -98,9 +110,35 @@ function resolveProfile(args) {
   const profileDir = path.resolve(args.profileDir);
   if (!fs.existsSync(profileDir)) throw new Error(`profile dir not found: ${profileDir}`);
   if (args.inPlace) {
-    return { userDataDir: path.dirname(profileDir), profileName: path.basename(profileDir), copied: false };
+    return {
+      userDataDir: path.dirname(profileDir),
+      profileName: path.basename(profileDir),
+      copied: false,
+      retained: false,
+      persistent: true,
+      sourceProfile: profileDir,
+      retainedProfile: profileDir,
+    };
   }
-  return copyProfileToRetainedRoot(profileDir, args.retainRoot);
+  if (args.copyProfile) return copyProfileToRetainedRoot(profileDir, args.retainRoot);
+
+  // The default path is a stable, reusable profile. If the caller already
+  // points at that profile, launch it directly; otherwise promote it once to
+  // the retained root and keep using that retained copy on later runs.
+  const retainedRoot = path.resolve(args.retainRoot);
+  const retainedProfile = path.join(retainedRoot, path.basename(profileDir));
+  if (path.resolve(profileDir) === path.resolve(retainedProfile)) {
+    return {
+      userDataDir: retainedRoot,
+      profileName: path.basename(profileDir),
+      copied: false,
+      retained: true,
+      persistent: true,
+      sourceProfile: profileDir,
+      retainedProfile,
+    };
+  }
+  return copyProfileToRetainedRoot(profileDir, retainedRoot);
 }
 
 function readTools() {
@@ -220,7 +258,18 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   ensureDir(args.outDir);
   const profile = resolveProfile(args);
-  const steps = [{ step: 'profile_resolved', profileName: profile.profileName, copied: profile.copied, retained: Boolean(profile.retained), userDataDir: profile.userDataDir, inPlace: args.inPlace }];
+  const steps = [{
+    step: 'profile_resolved',
+    profileName: profile.profileName,
+    copied: profile.copied,
+    retained: Boolean(profile.retained),
+    persistent: Boolean(profile.persistent),
+    sourceProfile: profile.sourceProfile,
+    retainedProfile: profile.retainedProfile,
+    userDataDir: profile.userDataDir,
+    inPlace: args.inPlace,
+    copyProfile: args.copyProfile,
+  }];
   const browser = await puppeteer.launch({
     executablePath: args.chrome,
     headless: args.headed ? false : true,
@@ -268,6 +317,9 @@ async function main() {
       outDir: args.outDir,
       copiedProfile: profile.copied,
       retainedProfile: Boolean(profile.retained),
+      persistentProfile: Boolean(profile.persistent),
+      sourceProfile: profile.sourceProfile,
+      retainedProfilePath: profile.retainedProfile,
       profileRoot: profile.userDataDir,
       needQrScan: fs.existsSync(path.join(args.outDir, 'wecom_qr.png')) && !validate.ok,
       qrPath: fs.existsSync(path.join(args.outDir, 'wecom_qr.png')) ? path.join(args.outDir, 'wecom_qr.png') : '',
@@ -289,6 +341,9 @@ async function main() {
       outDir: result.outDir,
       copiedProfile: result.copiedProfile,
       retainedProfile: result.retainedProfile,
+      persistentProfile: result.persistentProfile,
+      sourceProfile: result.sourceProfile,
+      retainedProfilePath: result.retainedProfilePath,
       profileRoot: result.profileRoot,
     }, null, 2));
     process.exit(validate.ok ? 0 : 2);

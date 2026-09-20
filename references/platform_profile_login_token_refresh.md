@@ -8,7 +8,9 @@
 - 当前 profile 可打开平台页面，但本次实测其中保存的 `TOKEN` 已被冻结；直接复用 localStorage 里的 `TOKEN` 不可用。
 - 清理冻结的 `TOKEN` 后，可以通过 UI 自动走到 `LSCloud 聆思开发者中心 -> 聆思员工登录 -> 企业微信 WeCom QR` 页面。
 - 如果企业微信/LSCloud cookie 仍有效，后续可能自动跳回平台并生成新 `TOKEN`；如果跳到 WeCom QR，则仍需要人工扫码一次。扫码成功后脚本可以自动提取平台 `localStorage.TOKEN`，校验 `/auth/b/getLoginUser`，并写回 `TOOLS.md`。
-- 因此：后续 token 失效时，先跑自动刷新脚本；只有脚本输出 `needQrScan=true` 或超时，才需要用户配合扫码/给新 token。
+- 设计目标是“每台 PC 首次扫码一次，后续复用同一个持久 Profile”；但这依赖上游 LSCloud/企业微信登录态仍然有效。平台短 token 失效时应自动刷新，不应重新扫码；只有上游登录态也失效、脚本输出 `needQrScan=true` 或超时，才需要再次扫码。
+- 之前出现“每次都要扫码”的主要原因是部分历史执行使用了 `AppData\\Local\\Temp\\listenai-profile-*` 临时 Profile。扫码后的 Cookie/Storage 只写入临时目录，下一次启动又从旧 Profile 开始，因此看起来每次都要扫码。`persisted=true` 只表示 token 写回 `TOOLS.md`，不表示浏览器登录态已持久化。
+- 当前脚本默认使用 `C:\\Users\\Administrator\\.codex\\browser-profiles\\listenai-platform\\Profile 7` 作为稳定 Profile；不要把扫码过程放在 `runtime/` 或系统临时目录中。
 
 ## 原始脚本解析
 
@@ -56,8 +58,8 @@ node scripts/ui/refresh_platform_token_from_profile.js \
 
 行为：
 
-1. 默认复制 `references/Profile 7` 到 `/tmp` 后启动 Chrome，避免污染原始 profile。
-2. 使用 `--profile-directory=Profile 7` 打开平台。
+1. 默认将首次使用的源 Profile 复制到稳定保留目录；后续直接复用该保留目录，不再创建一次性临时 Profile。若需要明确使用原目录，可传 `--in-place`。
+2. 使用 `--profile-directory=Profile 7` 打开平台，并保留上游 Cookie/Storage。
 3. 读取平台 `localStorage.TOKEN` 并调用 `/auth/b/getLoginUser` 校验。
 4. 若 token 冻结/失效，清理平台本地 `TOKEN/MENU/DICT_TYPE_TREE_DATA/SNOWY_MENU_MODULE_ID` 后重新进入登录页。
 5. 点击 `LSCloud 聆思开发者中心` 和 `聆思员工登录`。
@@ -73,11 +75,11 @@ node scripts/ui/refresh_platform_token_from_profile.js \
 
 ## token 失效后的处理顺序
 
-1. 先运行脚本默认模式，不需要用户介入。
-2. 若输出 `ok=true`，说明新 token 已写回 `TOOLS.md`，后续任务直接继续。
-3. 若输出 `needQrScan=true`，打开 `qrPath` 或重新用 `--headed` 执行，让用户扫码。
-4. 扫码完成后脚本会继续轮询并写回 token；不需要用户把 token 发到对话里。
-5. 若扫码后仍失败，记录脚本输出目录和页面截图，再判断是账号权限、企业微信登录、平台跳转还是网络问题。
+1. 先运行脚本默认模式，不需要用户介入；脚本先校验已有 Profile 中的 token。
+2. 若平台 token 失效但上游登录态有效，脚本自动跳转并获取新 token，不应出现扫码。
+3. 若输出 `ok=true`，说明新 token 已写回 `TOOLS.md`；结果中的 `persistentProfile=true` 才表示浏览器登录态使用的是持久 Profile。
+4. 只有输出 `needQrScan=true` 或超时，才打开有界面浏览器扫码；扫码完成后必须等待页面回跳和 token 校验成功再关闭浏览器。
+5. 若扫码后仍需重复扫码，先检查结果中的 `profileRoot` 是否为稳定目录，不能是 `AppData\\Local\\Temp\\listenai-profile-*`；确认 `persistentProfile=true` 后再判断账号策略或上游会话是否确实过期。
 
 ## 稳定性监控
 
