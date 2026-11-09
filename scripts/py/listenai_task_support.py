@@ -49,6 +49,10 @@ def ensure_local_tools_md() -> Path:
 
 
 def load_local_listenai_token() -> str:
+    """优先环境变量 LISTENAI_TOKEN，其次本机 TOOLS.md（仅兜底，不再作为唯一来源）。"""
+    env_token = os.environ.get("LISTENAI_TOKEN", "").strip()
+    if env_token:
+        return env_token
     path = LOCAL_TOOLS_MD
     if not path.exists():
         return ""

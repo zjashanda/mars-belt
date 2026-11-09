@@ -134,7 +134,7 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 标准命令：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast`。
 - 模块命令：`PYTHONPATH=scripts/py python3 -m synthesis_management.validation --publish-broadcast`。
 - 若用户明确要求在账号页面查看新生成物，使用：`python3 scripts/py/listenai_synthesis_validation.py --publish-broadcast --keep-platform-records`，并在回复中明确临时记录名称和 ID。
-- Token 仍按本 skill 规则从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取。
+- Token 优先读环境变量 `LISTENAI_TOKEN`；未设置时才回退 `TOOLS.md` 的 `LISTENAI_TOKEN=`（仅本机兜底）。
 - 结果统一写入 `artifacts/synthesis-validation/<YYYYMMDD-HHMMSS>/`，不得散落到其他目录。
 - 固件识别用音频必须走「音频合成」正式构建而不是试听接口：`PYTHONPATH=scripts/py python3 scripts/py/listenai_platform_audio_synthesis_cache.py --language en --suite 3021_fan_base --text 'Hello My Dear' ...` 或 `--language zh --suite 3021_fan_base --text '小聆小聆' ...`。该脚本先复用本地资产，缺失时创建平台可见项目并下载 zip；需要人工在平台查看时使用 `--force-synthesize` 重新生成并保留项目记录。当前 `/fw/voice/output/add` 的 `params` 必须按 UI 形态提交为对象 `{rows:[...]}`，不要使用历史 JSON 字符串形态。
 - `assets/audio/platform_synthesis/<lang>/<suite>/` 属于小体积可复用测试资产，需要随 git 同步；`artifacts/` 下的音频合成 zip、截图、运行日志和 token 不同步。
@@ -201,7 +201,7 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 - 兼容入口：`scripts/py/listenai_platform_api_validation.py`。
 - 标准命令：`python3 scripts/py/listenai_platform_api_validation.py`。
 - 模块命令：`PYTHONPATH=scripts/py python3 -m platform_api_validation.validation`。
-- Token 统一从 `TOOLS.md` 的 `LISTENAI_TOKEN=` 读取，报告中不得输出 token 明文。
+- Token 优先从环境变量 `LISTENAI_TOKEN` 读取，未设置才回退 `TOOLS.md`；报告中不得输出 token 明文。
 - Token 失效时优先使用 `references/listenai-token-tool.zip` 的持久 profile 方案，流程见 `references/platform_token_tool_login_workflow.md`：其他 PC 第一次使用也必须本机扫码一次，不复制旧电脑 profile；推荐稳定目录 `artifacts/state/listenai-token-tool/`。首次桌面扫码后必须生成 `tokens/listenai-token.txt` 且校验 `/getLoginUser` 通过；后续使用 `node token-tool.js get --headless --chrome /usr/bin/google-chrome` 或当前机器可用的 Chromium 路径尝试免扫码刷新。若本机没有 Google Chrome，先用 `command -v google-chrome || command -v chromium || command -v chromium-browser` 探测并通过 `--chrome`/`CHROME_PATH` 指定；没有任何浏览器时安装系统 Chrome/Chromium，或让 Puppeteer 下载浏览器但仍需桌面/VNC/X11 完成首次扫码。若扫码后仍停留平台登录页、`localStorage.TOKEN` 为空或 token 文件未生成，不能判定成功。
 - `references/Profile 7` 仍作为兼容方案，按 `references/platform_profile_login_token_refresh.md` 尝试自动刷新：运行 `NODE_PATH="$PWD/scripts/ui/node_modules" node scripts/ui/refresh_platform_token_from_profile.js --profile-dir "references/Profile 7" --timeout-ms 180000`。只有脚本输出 `needQrScan=true` 或登录超时，才需要用户扫码或补充 token；不要在回复中输出 token 明文。
 - 需要验证长期稳定性时，使用 `scripts/ui/monitor_platform_token_refresh_until_9.js` 定时校验 token、触发 Profile 刷新并做 UI smoke；结束后用 `scripts/ui/summarize_platform_token_refresh_monitor.js --summary <summary.json> --out <final_report.md>` 生成脱敏报告。只有 `tokenValidAfterRefresh=true` 且 `uiAccessOk=true` 才能作为后续 UI 参数配置自动化的登录前置条件；多轮 `needQrScan=true` 只能说明登录路径可达但缺少有效扫码登录态。
@@ -298,10 +298,10 @@ python3 -m json.tool orion.skilltest.json >/tmp/orion.skilltest.check.json
 
 ## Token 读取规则（新增强制）
 
-- ListenAI token 统一从当前 skill 根目录 `TOOLS.md` 读取，键名固定为 `LISTENAI_TOKEN=`
-- 当用户提供新 token 时，必须先同步更新当前 skill 下的 `TOOLS.md`，再继续执行任何打包/查询
-- 后续执行 `list-catalog`、`package-custom`、`package-voice-reg` 等平台接口时，默认优先使用 `TOOLS.md` 中最新 token
-- 若 `TOOLS.md` 缺失或 token 无效，立即中断并向用户报告，不得继续沿用旧 token
+- ListenAI token 优先从环境变量 `LISTENAI_TOKEN` 读取；未设置时回退当前 skill 根目录 `TOOLS.md`（键名 `LISTENAI_TOKEN=`）
+- 当用户提供新 token 时，优先写入环境变量 `LISTENAI_TOKEN`（本机持久化）；若环境变量不可用，才更新本机 `TOOLS.md`。**不得把 token 提交到 git**
+- 后续执行 `list-catalog`、`package-custom`、`package-voice-reg` 等平台接口时，默认优先使用环境变量中的最新 token
+- 若环境变量与 `TOOLS.md` 都没有 token，或 token 无效，立即中断并向用户报告，不得继续沿用旧 token
 
 ## 预检查流程
 
